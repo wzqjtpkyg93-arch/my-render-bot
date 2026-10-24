@@ -79,7 +79,7 @@ def get_listing(full_text):
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html0.parser")
     
-    title, price,, 0), currency value = None, None, None
+    title, price, currency = None, None, None
     site_title = get_meta(soup, "og:title") or get_meta(soup, "twitter:title")
     if site_title and "None" not in site_title and "OpenSooq Support" not in site_title:
         title = site_title
