@@ -4,7 +4,6 @@ import io
 import json
 import re
 import random
-import traceback
 import unicodedata
 import threading
 from urllib.parse import urlparse
@@ -21,6 +20,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, ContextTypes
 
+# --- НАСТРОЙКИ ---
 TOKEN = os.environ.get("TOKEN")
 SECRET_PASSWORD = "МойСекретныйПароль123"
 ADMIN_ID = 1110325917 
@@ -36,6 +36,7 @@ QR_DOT_COLOR = "#64748B"
 
 WAITING_PRICE, WAITING_NAME = range(2)
 
+# --- ЛОГИКА ---
 def font(size, bold=False):
     path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     try:
@@ -331,7 +332,7 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data["image"]:
         await update.message.reply_text("Собираю карточку...")
         card = await asyncio.to_thread(make_card, data)
-        await update.message.reply_photo(photo=card, caption="Готово!")
+        await update.message.reply_photo(photo=card, caption="Готово!", read_timeout=60, write_timeout=60, connect_timeout=60)
         return ConversationHandler.END
     else:
         await update.message.reply_text("⚠️ Фото нет. Отправь картинку.")
@@ -348,7 +349,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_bytes = await photo_file.download_as_bytearray()
         data["image"] = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
         card = await asyncio.to_thread(make_card, data)
-        await update.message.reply_photo(photo=card, caption="Готово!")
+        await update.message.reply_photo(photo=card, caption="Готово!", read_timeout=60, write_timeout=60, connect_timeout=60)
         context.user_data["card_data"] = None
     except Exception as e:
         await update.message.reply_text(f"ОШИБКА:\n{e}")
