@@ -64,16 +64,14 @@ TRANSLATIONS = {
     }
 }
 
-# --- ФУНКЦИЯ ДЛЯ УДАЛЕНИЯ СООБЩЕНИЙ ---
 async def delete_messages(context, chat_id, message_ids):
     for msg_id in message_ids:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-            await asyncio.sleep(0.1) # Небольшая пауза, чтобы Telegram не ругался
-        except Exception as e:
-            pass # Игнорируем, если сообщение уже удалено или старше 48 часов
+            await asyncio.sleep(0.1)
+        except Exception:
+            pass
 
-# --- ФУНКЦИЯ ПЕРЕВОДА ЧЕРЕЗ DEEPL ---
 def translate_text(text, target_lang="AR"):
     if not text or not DEEPL_API_KEY:
         return text
@@ -167,7 +165,8 @@ def prepare_text(value):
 def fit_text(draw, value, max_width, size=28, is_arabic_text=False):
     value = prepare_text(value)
     f = font(size, True, is_arabic_text)
-    while value and draw.textbbox((0, 0), value, font=f)[2] > max_width: value = value[:-2] + "…"
+    while value and draw.textbbox((0, 0), value, font=f)[2] > max_width: 
+        value = value[:-2] + "…"
     return value, f
 
 def generate_new_qr(data, size=230):
@@ -216,8 +215,13 @@ def make_card(data, lang="EN"):
     draw.rounded_rectangle((40, 190, W-40, 850), radius=20, fill="white", outline=BORDER, width=2)
     draw.text((70, 220), prepare_text(t["order"]), font=font(24, False, True), fill=GRAY)
     draw.text((70, 250), data["order_id"], font=font(55, True), fill=NAVY)
+    
+    # --- ИСПРАВЛЕНИЕ РАМКИ "PROCESSING" ---
+    # Рисуем рамку фиксированной ширины
     draw.rounded_rectangle((70, 320, 240, 365), radius=15, fill="#D1F2D8")
-    draw.text((95, 328), prepare_text(t["processing"]), font=font(24, True, True), fill="#1E7D32")
+    # Берем текст и подгоняем его под ширину рамки (170 пикселей минус отступы)
+    proc_text, proc_font = fit_text(draw, t["processing"], 150, 24, is_arabic_text=(lang == "AR"))
+    draw.text((85, 335), proc_text, font=proc_font, fill="#1E7D32")
     
     if data["image"]:
         img = ImageOps.fit(data["image"], (220, 220), Image.Resampling.LANCZOS)
@@ -322,6 +326,23 @@ def unblock_user(user_id):
         return True
     return False
 
+# --- НОВАЯ КОМАНДА /admin ---
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ У тебя нет прав администратора.")
+        return
+    
+    msg = (
+        "👑 *АДМИН-ПАНЕЛЬ*\n\n"
+        "Вот список твоих доступных команд:\n\n"
+        "👥 `/users` — Список всех пользователей, которые зашли в бота.\n\n"
+        "🔗 `/links` — Последние 10 ссылок, которые присылали пользователи.\n\n"
+        "🚫 `/block [ID]` — Заблокировать пользователя по ID (например, `/block 123456789`).\n\n"
+        "✅ `/unblock [ID]` — Разблокировать пользователя.\n\n"
+        "ℹ️ `/start` — Перезапустить бота."
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
 async def block_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     try:
@@ -379,7 +400,6 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else: await update.message.reply_text("❌ Неверный пароль.")
         return ConversationHandler.END
     
-    # Сохраняем ID сообщения со ссылкой для удаления
     context.user_data["msg_ids"] = [update.message.message_id]
 
     user_id = update.effective_user.id
@@ -436,7 +456,6 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
             read_timeout=60, write_timeout=60, connect_timeout=60
         )
         
-        # Ждем 5 секунд и удаляем "мусор"
         await asyncio.sleep(5)
         await delete_messages(context, update.effective_chat.id, context.user_data.get("msg_ids", []))
         context.user_data["msg_ids"] = []
@@ -473,7 +492,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             read_timeout=60, write_timeout=60, connect_timeout=60
         )
         
-        # Ждем 5 секунд и удаляем "мусор"
         await asyncio.sleep(5)
         await delete_messages(context, update.effective_chat.id, context.user_data.get("msg_ids", []))
         context.user_data["msg_ids"] = []
@@ -501,7 +519,6 @@ async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         card = await asyncio.to_thread(make_card, data, lang)
         await update.message.reply_photo(photo=card, caption="Готово!", read_timeout=60, write_timeout=60, connect_timeout=60)
         
-        # Удаляем сообщение "Собираю..."
         await asyncio.sleep(3)
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=msg.message_id)
         
@@ -518,6 +535,10 @@ async def run_bot():
         },
         fallbacks=[CommandHandler("start", start)]
     )
+    
+    # Добавили команду /admin
+    bot_app.add_handler(CommandHandler("admin", admin_command))
+    
     bot_app.add_handler(CommandHandler("block", block_command))
     bot_app.add_handler(CommandHandler("unblock", unblock_command))
     bot_app.add_handler(CommandHandler("users", users_command))
@@ -530,7 +551,7 @@ async def run_bot():
     await bot_app.initialize()
     await bot_app.start()
     await bot_app.updater.start_polling()
-    print("✅ БОТ ЗАПУЩЕН (с автоудалением)")
+    print("✅ БОТ ЗАПУЩЕН (финальная версия)")
 
 if __name__ == "__main__":
     def start_bot_thread():
