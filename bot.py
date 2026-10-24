@@ -6,14 +6,12 @@ import re
 import random
 import traceback
 import unicodedata
-import threading
 from urllib.parse import urlparse
 
 import requests
 import qrcode
 import arabic_reshaper
-import nest_asyncio
-from flask import Flask
+from flask import Flask, request
 
 from bidi.algorithm import get_display
 from bs4 import BeautifulSoup
@@ -26,6 +24,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 TOKEN = os.environ.get("TOKEN")
 SECRET_PASSWORD = "МойСекретныйПароль123"
 ADMIN_ID = 1110325917 
+WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 GREEN = "#28A96B" 
 LIGHT_GREEN = "#F0F8F4" 
@@ -37,7 +36,6 @@ QR_EYE_COLOR = "#0DEF05"
 QR_DOT_COLOR = "#64748B" 
 
 WAITING_PRICE, WAITING_NAME = range(2)
-nest_asyncio.apply()
 
 def font(size, bold=False):
     path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
@@ -249,7 +247,6 @@ def make_card(data):
     output.name = "card.png"
     return output
 
-# --- БОТ ЛОГИКА ---
 def get_blocked_list():
     try:
         with open("blocked.txt", "r") as f: return [int(line.strip()) for line in f if line.strip()]
@@ -357,32 +354,53 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"ОШИБКА:\n{e}")
 
-# --- ВЕБ-СЕРВЕР ДЛЯ RENDER ---
-app_flask = Flask(__name__)
-@app_flask.route('/')
-def health(): return "Bot is running", 200
+# --- ВЕБ-СЕРВЕР ДЛЯ RENDER (ВЕБХУК) ---
+flask_app = Flask(__name__)
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app_flask.run(host="0.0.0.0", port=port)
+@flask_app.route('/')
+def health():
+    return "Bot is running", 200
+
+@flask_app.route(f'/{TOKEN}', methods=['POST'])
+def webhook():
+    if request.method == "POST":
+        update = Update.de_json(request.get_json(force=True), app.bot)
+        asyncio.run_coroutine_threadsafe(app.process_update(update), loop)
+        return "ok", 200
 
 async def main():
-    bot_app = Application.builder().token(TOKEN).build()
+    global app, loop
+    app = Application.builder().token(TOKEN).build()
+    
     conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link)],
         states={WAITING_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_price)], WAITING_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)]},
         fallbacks=[CommandHandler("start", start)]
     )
-    bot_app.add_handler(CommandHandler("block", block_command))
-    bot_app.add_handler(CommandHandler("unblock", unblock_command))
-    bot_app.add_handler(CommandHandler("start", start))
-    bot_app.add_handler(conv_handler)
-    bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    await bot_app.initialize()
-    await bot_app.start()
-    await bot_app.updater.start_polling()
-    print("✅ БОТ ЗАПУЩЕН")
+    app.add_handler(CommandHandler("block", block_command))
+    app.add_handler(CommandHandler("unblock", unblock_command))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(conv_handler)
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    
+    await app.initialize()
+    
+    # Устанавливаем вебхук
+    if WEBHOOK_URL:
+        await app.bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN}")
+        print(f"✅ Вебхук установлен на {WEBHOOK_URL}/{TOKEN}")
+    else:
+        print("⚠️ WEBHOOK_URL не найден, запускаю polling...")
+        await app.updater.start_polling()
+
+    loop = asyncio.get_running_loop()
+    print("✅ БОТ ЗАПУЩЕН (Webhook mode)")
 
 if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
+    # Запускаем Flask в отдельном потоке, чтобы он слушал порт Render
+    from threading import Thread
+    port = int(os.environ.get("PORT", 10000))
+    Thread(target=lambda: flask_app.run(host="0.0.0.0", port=port), daemon=True).start()
+    
+    # Запускаем основной цикл бота
     asyncio.run(main())
