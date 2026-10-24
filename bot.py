@@ -21,7 +21,6 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, ContextTypes
 
-# --- НАСТРОЙКИ ---
 TOKEN = os.environ.get("TOKEN")
 SECRET_PASSWORD = "МойСекретныйПароль123"
 ADMIN_ID = 1110325917 
@@ -37,7 +36,6 @@ QR_DOT_COLOR = "#64748B"
 
 WAITING_PRICE, WAITING_NAME = range(2)
 
-# --- ФУНКЦИИ БОТА ---
 def font(size, bold=False):
     path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     try:
@@ -77,7 +75,7 @@ def get_listing(full_text):
     session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"})
     response = session.get(link, timeout=20, allow_redirects=True)
     response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html0.parser")
+    soup = BeautifulSoup(response.text, "html.parser")
     
     title, price, currency = None, None, None
     site_title = get_meta(soup, "og:title") or get_meta(soup, "twitter:title")
@@ -132,7 +130,7 @@ def prepare_text(value):
 def fit_text(draw, value, max_width, size=28):
     value = prepare_text(value)
     f = font(size, True)
-    while value and draw.textbbox((, font=f)[2] > max_width:
+    while value and draw.textbbox((0, 0), value, font=f)[2] > max_width:
         value = value[:-2] + "…"
     return value, f
 
@@ -355,7 +353,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"ОШИБКА:\n{e}")
 
-# --- ЗАПУСК В ФОНЕ И FLASK ---
 async def run_bot():
     bot_app = Application.builder().token(TOKEN).build()
     
@@ -376,16 +373,14 @@ async def run_bot():
     print("✅ БОТ ЗАПУЩЕН (Polling mode)")
 
 if __name__ == "__main__":
-    # Запускаем бота в фоновом потоке
     def start_bot_thread():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(run_bot())
-        loop.run_forever() # Держим поток живым
+        loop.run_forever()
     
     threading.Thread(target=start_bot_thread, daemon=True).start()
     
-    # Импортируем Flask-приложение и запускаем его в основном потоке
     from app import app as flask_app
     port = int(os.environ.get("PORT", 10000))
     print(f"Запуск Flask на порту {port}...")
