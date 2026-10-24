@@ -443,16 +443,28 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def lang_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await query.answer() # Отвечаем на нажатие, чтобы кнопка не висела
     
     lang = query.data.split("_")[1]
-    data = context.user_data["card_data"]
+    data = context.user_data.get("card_data")
     
-    await query.edit_message_text(text="Собираю карточку... / جاري التجهيز...")
+    if not data:
+        await query.message.reply_text("Ошибка: данные карточки потерялись. Отправь ссылку заново.")
+        return ConversationHandler.END
+    
+    # Вместо редактирования (из-за которого был баг) отправляем новое сообщение
+    msg = await query.message.reply_text("Собираю карточку... / جاري التجهيز...")
     
     try:
         card = await asyncio.to_thread(make_card, data, lang)
-        await query.message.reply_photo(photo=card, caption="Готово! / تم!", read_timeout=60, write_timeout=60, connect_timeout=60)
+        await msg.delete() # Удаляем сообщение "Собираю..."
+        await query.message.reply_photo(
+            photo=card, 
+            caption="Готово! / تم!", 
+            read_timeout=60, 
+            write_timeout=60, 
+            connect_timeout=60
+        )
     except Exception as e:
         await query.message.reply_text(f"ОШИБКА:\n{e}")
         
