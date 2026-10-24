@@ -40,7 +40,7 @@ WAITING_PRICE, WAITING_NAME, WAITING_LANG = range(3)
 REGISTERED_USERS = {}
 RECENT_LINKS = []
 
-# --- СЛОВАРИ ДЛЯ ПЕРЕВОДОВ ---
+# --- СЛОВАРИ ДЛЯ ПЕРЕВОДОВ (GULF / KUWAIT DIALECT) ---
 TRANSLATIONS = {
     "EN": {
         "payment_confirmed": "Payment confirmed",
@@ -63,22 +63,22 @@ TRANSLATIONS = {
         "price_not_avail": "Price not available"
     },
     "AR": {
-        "payment_confirmed": "تم تأكيد الدفع",
-        "payment_secure": "تم تأمين دفعتك.",
-        "order": "طلب #",
-        "processing": "قيد المعالجة",
-        "transaction_id": "معرف المعاملة",
+        "payment_confirmed": "تم الدفع بنجاح", 
+        "payment_secure": "مبلغك محفوظ بأمان.",
+        "order": "طلب رقم #",
+        "processing": "جاري المعالجة",
+        "transaction_id": "رقم العملية",
         "tracking_number": "رقم التتبع",
         "delivery_status": "حالة التوصيل",
-        "in_progress": "قيد التقدم",
-        "waiting_seller": "في انتظار البائع\nلاستلام الأموال",
+        "in_progress": "جاري التنفيذ",
+        "waiting_seller": "بانتظار البائع\nلاستلام المبلغ",
         "seller_confirmed": "تم تأكيد البائع",
-        "preparing": "تحضير الشحنة",
-        "courier": "استلام البريد",
+        "preparing": "جاري التجهيز",
+        "courier": "استلام المندوب",
         "protected": "محمي بواسطة OpenSooq",
-        "protected_text": "دفعتك آمنة ومحمية حتى تستلم طلبك.",
-        "help": "(i) بحاجة لمساعدة؟ زر مركز المساعدة أو اتصل بالدعم.",
-        "qr_text": "أرسل رمز الاستجابة السريعة هذا\nإلى البائع حتى يتمكن\nمن استلام الدفعة.",
+        "protected_text": "مبلغك آمن ومحمي لحين استلام طلبك.",
+        "help": "(i) تحتاج مساعدة؟ زر مركز المساعدة أو تواصل معنا.",
+        "qr_text": "أرسل رمز الـ QR\nللبائع عشان يقدر\nيستلم المبلغ.",
         "no_photo": "لا توجد صورة",
         "price_not_avail": "السعر غير متوفر"
     }
@@ -220,13 +220,12 @@ def make_card(data, lang="EN"):
     draw.rounded_rectangle((40, 40, W-40, 160), radius=20, fill=LIGHT_GREEN)
     draw_check_icon(70, 65, 70, GREEN)
     
-    # Текст заголовка (с поддержкой арабского)
     draw.text((160, 70), prepare_text(t["payment_confirmed"]), font=font(36, True), fill=NAVY)
     draw.text((160, 115), prepare_text(t["payment_secure"]), font=font(24), fill=GRAY)
     draw.text((W-80, 90), ">", font=font(40, True), fill=GRAY)
     
     draw.rounded_rectangle((40, 190, W-40, 850), radius=20, fill="white", outline=BORDER, width=2)
-    draw.text((70, 220), t["order"], font=font(24), fill=GRAY)
+    draw.text((70, 220), prepare_text(t["order"]), font=font(24), fill=GRAY)
     draw.text((70, 250), data["order_id"], font=font(55, True), fill=NAVY)
     
     draw.rounded_rectangle((70, 320, 240, 365), radius=15, fill="#D1F2D8")
@@ -429,15 +428,14 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = context.user_data["card_data"]
     
     if data["image"]:
-        # Вместо генерации сразу, показываем кнопки выбора языка
         keyboard = [
             [
                 InlineKeyboardButton("🇬🇧 English", callback_data="lang_EN"),
-                InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_AR")
+                InlineKeyboardButton("🇰🇼 Kuwaiti Arabic", callback_data="lang_AR")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("Выбери язык для карточки:", reply_markup=reply_markup)
+        await update.message.reply_text("Выбери язык для карточки / اختر لغة البطاقة:", reply_markup=reply_markup)
         return WAITING_LANG
     else:
         await update.message.reply_text("⚠️ Фото нет. Отправь картинку.")
@@ -447,14 +445,14 @@ async def lang_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    lang = query.data.split("_")[1] # EN или AR
+    lang = query.data.split("_")[1]
     data = context.user_data["card_data"]
     
-    await query.edit_message_text(text="Собираю карточку...")
+    await query.edit_message_text(text="Собираю карточку... / جاري التجهيز...")
     
     try:
         card = await asyncio.to_thread(make_card, data, lang)
-        await query.message.reply_photo(photo=card, caption="Готово!", read_timeout=60, write_timeout=60, connect_timeout=60)
+        await query.message.reply_photo(photo=card, caption="Готово! / تم!", read_timeout=60, write_timeout=60, connect_timeout=60)
     except Exception as e:
         await query.message.reply_text(f"ОШИБКА:\n{e}")
         
@@ -472,15 +470,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_bytes = await photo_file.download_as_bytearray()
         data["image"] = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
         
-        # После загрузки фото тоже показываем кнопки
         keyboard = [
             [
                 InlineKeyboardButton("🇬🇧 English", callback_data="lang_EN"),
-                InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_AR")
+                InlineKeyboardButton("🇰🇼 Kuwaiti Arabic", callback_data="lang_AR")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("Фото получено. Выбери язык для карточки:", reply_markup=reply_markup)
+        await update.message.reply_text("Фото получено. Выбери язык для карточки / اختر لغة البطاقة:", reply_markup=reply_markup)
         return WAITING_LANG
         
     except Exception as e:
