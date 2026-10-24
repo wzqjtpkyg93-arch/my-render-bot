@@ -22,6 +22,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get("TOKEN")
+DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "b79881bd-ee77-4eb5-af89-773b17e1113c:fx") # Твой ключ DeepL
 SECRET_PASSWORD = "МойСекретныйПароль123"
 ADMIN_ID = 1110325917 
 
@@ -63,8 +64,23 @@ TRANSLATIONS = {
     }
 }
 
+# --- ФУНКЦИЯ ПЕРЕВОДА ЧЕРЕЗ DEEPL ---
+def translate_text(text, target_lang="AR"):
+    if not text or not DEEPL_API_KEY:
+        return text
+    try:
+        url = "https://api-free.deepl.com/v2/translate" if DEEPL_API_KEY.endswith(":fx") else "https://api.deepl.com/v2/translate"
+        headers = {"Authorization": f"DeepL-Auth-Key {DEEPL_API_KEY}"}
+        data = {"text": [text], "target_lang": target_lang}
+        response = requests.post(url, headers=headers, data=data, timeout=10)
+        response.raise_for_status()
+        return response.json()["translations"][0]["text"]
+    except Exception as e:
+        print(f"Ошибка перевода DeepL: {e}")
+        return text
+
+# --- ОСТАЛЬНЫЕ ФУНКЦИИ ---
 def font(size, bold=False, is_arabic_text=False):
-    # Используем только стандартный шрифт, который точно есть на сервере
     path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     try: 
         return ImageFont.truetype(path, size)
@@ -136,7 +152,6 @@ def get_listing(full_text):
 def prepare_text(value):
     value = str(value)
     value = "".join(c for c in value if not unicodedata.category(c).startswith('So'))
-    # Для арабского текста просто склеиваем буквы, без переворота
     if any("\u0600" <= c <= "\u06FF" for c in value):
         return arabic_reshaper.reshape(value)
     return value.strip()
@@ -205,7 +220,14 @@ def make_card(data, lang="EN"):
         draw.rounded_rectangle((70, 400, 290, 620), radius=15, fill="#E9EFF5")
         draw.text((130, 500), t["no_photo"], font=font(20, True), fill=GRAY)
         
-    title, t_font = fit_text(draw, data["title"], 310, 26, is_arabic_text=True)
+    # Если язык арабский, переводим название через DeepL
+    title_text = data["title"]
+    if lang == "AR" and title_text:
+        print(f"Перевод названия: {title_text}")
+        title_text = translate_text(title_text, "AR")
+        print(f"Результат: {title_text}")
+        
+    title, t_font = fit_text(draw, title_text, 310, 26, is_arabic_text=(lang == "AR"))
     draw.text((320, 410), title, font=t_font, fill=NAVY)
     
     curr = data['currency'] if data['currency'] else ""
@@ -465,7 +487,7 @@ async def run_bot():
     await bot_app.initialize()
     await bot_app.start()
     await bot_app.updater.start_polling()
-    print("✅ БОТ ЗАПУЩЕН (с командой /create)")
+    print("✅ БОТ ЗАПУЩЕН (с DeepL)")
 
 if __name__ == "__main__":
     def start_bot_thread():
