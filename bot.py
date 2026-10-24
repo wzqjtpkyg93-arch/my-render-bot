@@ -7,7 +7,6 @@ import random
 import unicodedata
 import threading
 from urllib.parse import urlparse
-from datetime import datetime
 
 import requests
 import qrcode
@@ -37,9 +36,9 @@ QR_DOT_COLOR = "#64748B"
 
 WAITING_PRICE, WAITING_NAME = range(2)
 
-# --- ХРАНИЛИЩЕ ДЛЯ СТАТИСТИКИ (сбрасывается при перезапуске) ---
-REGISTERED_USERS = {}  # {user_id: username}
-RECENT_LINKS = []      # Список последних ссылок
+# --- ХРАНИЛИЩЕ ДЛЯ СТАТИСТИКИ ---
+REGISTERED_USERS = {}
+RECENT_LINKS = []
 
 # --- ЛОГИКА ---
 def font(size, bold=False):
@@ -102,7 +101,7 @@ def get_listing(full_text):
         except: continue
 
     if not price:
-        match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|USD|SAR|AED|QR|RUB)", full_text, re.IGNORECASE)
+        match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QR|RUB|EUR)", full_text, re.IGNORECASE)
         if match:
             price = match.group(1)
             currency = match.group(2).upper()
@@ -196,9 +195,12 @@ def make_card(data):
         draw.text((130, 500), "NO PHOTO", font=font(20, True), fill=GRAY)
     title, t_font = fit_text(draw, data["title"], 310, 26)
     draw.text((320, 410), title, font=t_font, fill=NAVY)
-    curr = data['currency'] if data['currency'] else "KWD"
+    
+    # ИСПРАВЛЕНО: Убрали принудительный KWD
+    curr = data['currency'] if data['currency'] else ""
     price_str = f"{data['price']} {curr}" if data["price"] else "Price not available"
     draw.text((320, 480), price_str, font=font(45, True), fill=NAVY)
+    
     draw.rounded_rectangle((630, 210, 930, 640), radius=20, fill="#F8FAFC", outline=BORDER, width=2)
     qr_img = generate_new_qr(data["url"], size=230) 
     image.paste(qr_img, (665, 240), qr_img) 
@@ -326,7 +328,6 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_id = update.effective_user.id
             username = update.effective_user.username or f"ID_{user_id}"
             
-            # Сохраняем юзера в память
             REGISTERED_USERS[user_id] = username
             with open("users.txt", "a") as f: f.write(f"ID: {user_id}, @{username}\n")
             
@@ -336,7 +337,6 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else: await update.message.reply_text("❌ Неверный пароль.")
         return ConversationHandler.END
     
-    # Сохраняем ссылку в память
     user_id = update.effective_user.id
     username = REGISTERED_USERS.get(user_id, update.effective_user.username or f"ID_{user_id}")
     link_match = re.search(r'(https?://\S+)', text)
@@ -355,7 +355,8 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if text != "/skip":
-        match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|USD|SAR|AED|QR|RUB)", text, re.IGNORECASE)
+        # ИСПРАВЛЕНО: Добавили все валюты
+        match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QR|RUB|EUR)", text, re.IGNORECASE)
         if match:
             context.user_data["card_data"]["price"] = match.group(1)
             context.user_data["card_data"]["currency"] = match.group(2).upper()
@@ -404,8 +405,8 @@ async def run_bot():
     )
     bot_app.add_handler(CommandHandler("block", block_command))
     bot_app.add_handler(CommandHandler("unblock", unblock_command))
-    bot_app.add_handler(CommandHandler("users", users_command)) # Новая команда
-    bot_app.add_handler(CommandHandler("links", links_command)) # Новая команда
+    bot_app.add_handler(CommandHandler("users", users_command))
+    bot_app.add_handler(CommandHandler("links", links_command))
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(conv_handler)
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
