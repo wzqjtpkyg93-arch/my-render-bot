@@ -20,7 +20,6 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, ContextTypes, CallbackQueryHandler
 
-# --- НАСТРОЙКИ ---
 TOKEN = os.environ.get("TOKEN")
 SECRET_PASSWORD = "МойСекретныйПароль123"
 ADMIN_ID = 1110325917 
@@ -401,22 +400,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"ОШИБКА:\n{e}")
         return ConversationHandler.END
 
-# --- ЗАПУСК ВЕБХУКА ---
-app_flask = Flask(__name__)
-bot_app = None
-
-@app_flask.route('/')
-def health(): return "Bot is running", 200
-
-@app_flask.route(f'/{TOKEN}', methods=['POST'])
-def webhook():
-    if request.method == "POST":
-        update = Update.de_json(request.get_json(force=True), bot_app.bot)
-        asyncio.run_coroutine_threadsafe(bot_app.process_update(update), loop)
-        return "ok", 200
-
-def setup_bot():
-    global bot_app
+async def run_bot():
     bot_app = Application.builder().token(TOKEN).build()
     conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link)],
@@ -430,20 +414,10 @@ def setup_bot():
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(conv_handler)
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    return bot_app
-
-async def run_bot():
-    global bot_app, loop
-    bot_app = setup_bot()
     await bot_app.initialize()
-    if WEBHOOK_URL:
-        await bot_app.bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN}")
-        print(f"✅ Вебхук установлен на {WEBHOOK_URL}/{TOKEN}")
-    else:
-        print("⚠️ WEBHOOK_URL не найден, запускаю polling...")
-        await bot_app.updater.start_polling()
-    loop = asyncio.get_running_loop()
-    print("✅ БОТ ЗАПУЩЕН (Webhook mode)")
+    await bot_app.start()
+    await bot_app.updater.start_polling()
+    print("✅ БОТ ЗАПУЩЕН (Polling mode)")
 
 if __name__ == "__main__":
     def start_bot_thread():
@@ -453,6 +427,8 @@ if __name__ == "__main__":
         loop.run_forever()
     
     threading.Thread(target=start_bot_thread, daemon=True).start()
+    
+    from app import app as flask_app
     port = int(os.environ.get("PORT", 10000))
     print(f"Запуск Flask на порту {port}...")
-    app_flask.run(host="0.0.0.0", port=port)
+    flask_app.run(host="0.0.0.0", port=port)
