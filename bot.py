@@ -22,7 +22,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get("TOKEN")
-DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "b79881bd-ee77-4eb5-af89-773b17e1113c:fx") # Твой ключ DeepL
+DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "b79881bd-ee77-4eb5-af89-773b17e1113c:fx")
 SECRET_PASSWORD = "МойСекретныйПароль123"
 ADMIN_ID = 1110325917 
 
@@ -64,6 +64,15 @@ TRANSLATIONS = {
     }
 }
 
+# --- ФУНКЦИЯ ДЛЯ УДАЛЕНИЯ СООБЩЕНИЙ ---
+async def delete_messages(context, chat_id, message_ids):
+    for msg_id in message_ids:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+            await asyncio.sleep(0.1) # Небольшая пауза, чтобы Telegram не ругался
+        except Exception as e:
+            pass # Игнорируем, если сообщение уже удалено или старше 48 часов
+
 # --- ФУНКЦИЯ ПЕРЕВОДА ЧЕРЕЗ DEEPL ---
 def translate_text(text, target_lang="AR"):
     if not text or not DEEPL_API_KEY:
@@ -79,7 +88,6 @@ def translate_text(text, target_lang="AR"):
         print(f"Ошибка перевода DeepL: {e}")
         return text
 
-# --- ОСТАЛЬНЫЕ ФУНКЦИИ ---
 def font(size, bold=False, is_arabic_text=False):
     path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     try: 
@@ -220,12 +228,9 @@ def make_card(data, lang="EN"):
         draw.rounded_rectangle((70, 400, 290, 620), radius=15, fill="#E9EFF5")
         draw.text((130, 500), t["no_photo"], font=font(20, True), fill=GRAY)
         
-    # Если язык арабский, переводим название через DeepL
     title_text = data["title"]
     if lang == "AR" and title_text:
-        print(f"Перевод названия: {title_text}")
         title_text = translate_text(title_text, "AR")
-        print(f"Результат: {title_text}")
         
     title, t_font = fit_text(draw, title_text, 310, 26, is_arabic_text=(lang == "AR"))
     draw.text((320, 410), title, font=t_font, fill=NAVY)
@@ -373,22 +378,31 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Доступ открыт.")
         else: await update.message.reply_text("❌ Неверный пароль.")
         return ConversationHandler.END
+    
+    # Сохраняем ID сообщения со ссылкой для удаления
+    context.user_data["msg_ids"] = [update.message.message_id]
+
     user_id = update.effective_user.id
     username = REGISTERED_USERS.get(user_id, update.effective_user.username or f"ID_{user_id}")
     link_match = re.search(r'(https?://\S+)', text)
     if link_match: 
         RECENT_LINKS[user_id] = {"user": username, "url": link_match.group(1)}
         
-    await update.message.reply_text("Ссылка получена. Ищу данные...")
+    msg = await update.message.reply_text("Ссылка получена. Ищу данные...")
+    context.user_data["msg_ids"].append(msg.message_id)
+    
     try:
         data = await asyncio.to_thread(get_listing, text)
         context.user_data["card_data"] = data
-        await update.message.reply_text("Введи цену (например, 55 KWD). Если цена есть на сайте, просто напиши /skip")
+        
+        msg = await update.message.reply_text("Введи цену (например, 55 KWD). Если цена есть на сайте, просто напиши /skip")
+        context.user_data["msg_ids"].append(msg.message_id)
         return WAITING_PRICE
     except Exception as e:
         await update.message.reply_text(f"ОШИБКА:\n{e}"); return ConversationHandler.END
 
 async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["msg_ids"].append(update.message.message_id)
     text = update.message.text.strip()
     if text != "/skip":
         match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QR|RUB|EUR)", text, re.IGNORECASE)
@@ -398,10 +412,13 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             context.user_data["card_data"]["price"] = text
             context.user_data["card_data"]["currency"] = ""
-    await update.message.reply_text("Теперь введи название товара (или /skip).")
+    
+    msg = await update.message.reply_text("Теперь введи название товара (или /skip).")
+    context.user_data["msg_ids"].append(msg.message_id)
     return WAITING_NAME
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["msg_ids"].append(update.message.message_id)
     text = update.message.text.strip()
     if text != "/skip": context.user_data["card_data"]["title"] = text
     data = context.user_data["card_data"]
@@ -409,24 +426,39 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["last_card_data"] = data
     
     if data["image"]:
-        await update.message.reply_text("Собираю карточку (English)...")
+        msg = await update.message.reply_text("Собираю карточку (English)...")
+        context.user_data["msg_ids"].append(msg.message_id)
+        
         card = await asyncio.to_thread(make_card, data, "EN")
         await update.message.reply_photo(
             photo=card, 
             caption="Готово! Чтобы сделать арабскую версию, напиши `/create arabic`", 
             read_timeout=60, write_timeout=60, connect_timeout=60
         )
+        
+        # Ждем 5 секунд и удаляем "мусор"
+        await asyncio.sleep(5)
+        await delete_messages(context, update.effective_chat.id, context.user_data.get("msg_ids", []))
+        context.user_data["msg_ids"] = []
+        
         return ConversationHandler.END
     else:
-        await update.message.reply_text("⚠️ Фото нет. Отправь картинку.")
+        msg = await update.message.reply_text("⚠️ Фото нет. Отправь картинку.")
+        context.user_data["msg_ids"].append(msg.message_id)
         return ConversationHandler.END
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id in get_blocked_list(): return
     if not context.user_data.get("authorized"): return
+    
+    context.user_data["msg_ids"].append(update.message.message_id)
+    
     data = context.user_data.get("card_data")
     if not data: return
-    await update.message.reply_text("Фото получено! Собираю карточку (English)...")
+    
+    msg = await update.message.reply_text("Фото получено! Собираю карточку (English)...")
+    context.user_data["msg_ids"].append(msg.message_id)
+    
     try:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
@@ -440,7 +472,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption="Готово! Чтобы сделать арабскую версию, напиши `/create arabic`", 
             read_timeout=60, write_timeout=60, connect_timeout=60
         )
+        
+        # Ждем 5 секунд и удаляем "мусор"
+        await asyncio.sleep(5)
+        await delete_messages(context, update.effective_chat.id, context.user_data.get("msg_ids", []))
+        context.user_data["msg_ids"] = []
         context.user_data["card_data"] = None
+        
     except Exception as e:
         await update.message.reply_text(f"ОШИБКА:\n{e}")
 
@@ -455,13 +493,18 @@ async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = "EN"
     if context.args and context.args[0].lower() in ["arabic", "ar", "kuwait"]:
         lang = "AR"
-        await update.message.reply_text("Собираю карточку (Kuwaiti Arabic)...")
+        msg = await update.message.reply_text("Собираю карточку (Kuwaiti Arabic)...")
     else:
-        await update.message.reply_text("Собираю карточку (English)...")
+        msg = await update.message.reply_text("Собираю карточку (English)...")
         
     try:
         card = await asyncio.to_thread(make_card, data, lang)
         await update.message.reply_photo(photo=card, caption="Готово!", read_timeout=60, write_timeout=60, connect_timeout=60)
+        
+        # Удаляем сообщение "Собираю..."
+        await asyncio.sleep(3)
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=msg.message_id)
+        
     except Exception as e:
         await update.message.reply_text(f"❌ ОШИБКА ПРИ СОЗДАНИИ КАРТОЧКИ:\n\n{e}")
 
@@ -487,7 +530,7 @@ async def run_bot():
     await bot_app.initialize()
     await bot_app.start()
     await bot_app.updater.start_polling()
-    print("✅ БОТ ЗАПУЩЕН (с DeepL)")
+    print("✅ БОТ ЗАПУЩЕН (с автоудалением)")
 
 if __name__ == "__main__":
     def start_bot_thread():
