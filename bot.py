@@ -452,7 +452,7 @@ async def lang_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Ошибка: данные карточки потерялись. Отправь ссылку заново.")
         return ConversationHandler.END
     
-    # Вместо редактирования (из-за которого был баг) отправляем новое сообщение
+    # Отправляем новое сообщение вместо редактирования
     msg = await query.message.reply_text("Собираю карточку... / جاري التجهيز...")
     
     try:
@@ -466,7 +466,8 @@ async def lang_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             connect_timeout=60
         )
     except Exception as e:
-        await query.message.reply_text(f"ОШИБКА:\n{e}")
+        # ВЫВОДИМ ОШИБКУ ПРЯМО В ЧАТ
+        await query.message.reply_text(f"❌ ОШИБКА ПРИ СОЗДАНИИ КАРТОЧКИ:\n\n{e}")
         
     context.user_data["card_data"] = None
     return ConversationHandler.END
