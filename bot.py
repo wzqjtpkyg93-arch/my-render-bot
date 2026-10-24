@@ -7,6 +7,7 @@ import random
 import unicodedata
 import threading
 from urllib.parse import urlparse
+from datetime import datetime
 
 import requests
 import qrcode
@@ -35,6 +36,10 @@ QR_EYE_COLOR = "#0DEF05"
 QR_DOT_COLOR = "#64748B" 
 
 WAITING_PRICE, WAITING_NAME = range(2)
+
+# --- ХРАНИЛИЩЕ ДЛЯ СТАТИСТИКИ (сбрасывается при перезапуске) ---
+REGISTERED_USERS = {}  # {user_id: username}
+RECENT_LINKS = []      # Список последних ссылок
 
 # --- ЛОГИКА ---
 def font(size, bold=False):
@@ -266,6 +271,7 @@ def unblock_user(user_id):
         return True
     return False
 
+# --- АДМИН КОМАНДЫ ---
 async def block_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     try:
@@ -282,6 +288,28 @@ async def unblock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else: await update.message.reply_text(f"ℹ️ Пользователь {target_id} не в черном списке.")
     except: await update.message.reply_text("⚠️ Используй: `/unblock 123456789`", parse_mode="Markdown")
 
+async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID: return
+    if not REGISTERED_USERS:
+        await update.message.reply_text("Пока никто не зарегистрировался.")
+        return
+    
+    msg = "👥 *Список пользователей:*\n\n"
+    for uid, uname in REGISTERED_USERS.items():
+        msg += f"👤 @{uname} (ID: `{uid}`)\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def links_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID: return
+    if not RECENT_LINKS:
+        await update.message.reply_text("Ссылок пока не было.")
+        return
+    
+    msg = "🔗 *Последние 10 ссылок:*\n\n"
+    for item in RECENT_LINKS[-10:]:
+        msg += f"👤 @{item['user']}\n🔗 {item['url']}\n\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id in get_blocked_list():
         await update.message.reply_text("⛔ Вы заблокированы."); return
@@ -297,12 +325,24 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["authorized"] = True
             user_id = update.effective_user.id
             username = update.effective_user.username or f"ID_{user_id}"
+            
+            # Сохраняем юзера в память
+            REGISTERED_USERS[user_id] = username
             with open("users.txt", "a") as f: f.write(f"ID: {user_id}, @{username}\n")
+            
             try: await context.bot.send_message(chat_id=ADMIN_ID, text=f"🚨 *Новый пользователь!*\n\n👤 @{username}\n🆔 `{user_id}`\n\nЗаблокировать: `/block {user_id}`", parse_mode="Markdown")
             except: pass
             await update.message.reply_text("✅ Доступ открыт.")
         else: await update.message.reply_text("❌ Неверный пароль.")
         return ConversationHandler.END
+    
+    # Сохраняем ссылку в память
+    user_id = update.effective_user.id
+    username = REGISTERED_USERS.get(user_id, update.effective_user.username or f"ID_{user_id}")
+    link_match = re.search(r'(https?://\S+)', text)
+    if link_match:
+        RECENT_LINKS.append({"user": username, "url": link_match.group(1)})
+
     await update.message.reply_text("Ссылка получена. Ищу данные...")
     try:
         data = await asyncio.to_thread(get_listing, text)
@@ -364,6 +404,8 @@ async def run_bot():
     )
     bot_app.add_handler(CommandHandler("block", block_command))
     bot_app.add_handler(CommandHandler("unblock", unblock_command))
+    bot_app.add_handler(CommandHandler("users", users_command)) # Новая команда
+    bot_app.add_handler(CommandHandler("links", links_command)) # Новая команда
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(conv_handler)
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
