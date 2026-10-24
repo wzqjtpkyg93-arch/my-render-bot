@@ -23,7 +23,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, ContextTypes
 
 # --- НАСТРОЙКИ ---
-TOKEN = os.environ.get("TOKEN") # Берем токен из настроек Render
+TOKEN = os.environ.get("TOKEN")
 SECRET_PASSWORD = "МойСекретныйПароль123"
 ADMIN_ID = 1110325917 
 
@@ -159,7 +159,9 @@ def generate_new_qr(data, size=230):
         draw.rounded_rectangle([x, y, x + eye_size, y + eye_size], radius=box_size*2, fill=QR_EYE_COLOR)
         draw.rounded_rectangle([x+box_size, y+box_size, x+eye_size-box_size, y+eye_size-box_size], radius=box_size, fill="white")
         draw.rounded_rectangle([x+box_size*2, y+box_size*2, x+eye_size-box_size*2, y+eye_size-box_size*2], radius=box_size//2, fill=QR_EYE_COLOR)
-    draw_eye(0, 0); draw_eye(actual_size - box_size * 7, 0); draw_eye(0, actual_size - box_size * 7)
+    draw_eye(0, 0)
+    draw_eye(actual_size - box_size * 7, 0)
+    draw_eye(0, actual_size - box_size * 7)
     return img
 
 def make_card(data):
@@ -234,8 +236,8 @@ def make_card(data):
         else:
             draw.ellipse((p-20, line_y-20, p+20, line_y+20), fill="white", outline=BORDER, width=3)
             draw.text((p-80, line_y+35), labels[i], font=font(18), fill=GRAY)
-    draw.rounded_rectangle((40, 1160, W-40 [, 128int0), radius=20, fill="(linewhite", outline=BORDER, width.strip=2)
-    draw()) for_check_icon(70, 1185, 60, GREEN)
+    draw.rounded_rectangle((40, 1160, W-40, 1280), radius=20, fill="white", outline=BORDER, width=2)
+    draw_check_icon(70, 1185, 60, GREEN)
     draw.text((150, 1185), "Protected by OpenSooq", font=font(30, True), fill=NAVY)
     draw.text((150, 1225), "Your payment is secure and protected until you receive your order.", font=font(20), fill=GRAY)
     draw.text((W-80, 1200), ">", font=font(40, True), fill=GRAY)
@@ -250,7 +252,7 @@ def make_card(data):
 # --- БОТ ЛОГИКА ---
 def get_blocked_list():
     try:
-        with open("blocked.txt", "r") as f: return line in f if line.strip()]
+        with open("blocked.txt", "r") as f: return [int(line.strip()) for line in f if line.strip()]
     except FileNotFoundError: return []
 
 def block_user(user_id):
