@@ -4,6 +4,7 @@ import io
 import json
 import re
 import random
+import string
 import unicodedata
 import threading
 from urllib.parse import urlparse
@@ -23,7 +24,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 # --- НАСТРОЙКИ ---
 TOKEN = os.environ.get("TOKEN")
 DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "b79881bd-ee77-4eb5-af89-773b17e1113c:fx")
-SECRET_PASSWORD = "МойСекретныйПароль123"
 ADMIN_ID = 1110325917 
 
 GREEN = "#28A96B" 
@@ -63,6 +63,38 @@ TRANSLATIONS = {
         "no_photo": "لا توجد صورة", "price_not_avail": "السعر غير متوفر"
     }
 }
+
+# --- НОВАЯ ЛОГИКА: ГЕНЕРАЦИЯ И ПРОВЕРКА ПАРОЛЕЙ ---
+def generate_password(length=8):
+    chars = string.ascii_letters + string.digits
+    return ''.join(random.choice(chars) for _ in range(length))
+
+def save_user_password(user_id, password):
+    # Читаем старые пароли
+    data = {}
+    if os.path.exists("passwords.txt"):
+        with open("passwords.txt", "r") as f:
+            for line in f:
+                if ":" in line:
+                    uid, pwd = line.strip().split(":", 1)
+                    data[uid] = pwd
+    # Добавляем или обновляем
+    data[str(user_id)] = password
+    # Сохраняем обратно
+    with open("passwords.txt", "w") as f:
+        for uid, pwd in data.items():
+            f.write(f"{uid}:{pwd}\n")
+
+def check_user_password(user_id, password):
+    if not os.path.exists("passwords.txt"):
+        return False
+    with open("passwords.txt", "r") as f:
+        for line in f:
+            if ":" in line:
+                uid, pwd = line.strip().split(":", 1)
+                if uid == str(user_id) and pwd == password:
+                    return True
+    return False
 
 async def delete_messages(context, chat_id, message_ids):
     for msg_id in message_ids:
@@ -216,10 +248,7 @@ def make_card(data, lang="EN"):
     draw.text((70, 220), prepare_text(t["order"]), font=font(24, False, True), fill=GRAY)
     draw.text((70, 250), data["order_id"], font=font(55, True), fill=NAVY)
     
-    # --- ИСПРАВЛЕНИЕ РАМКИ "PROCESSING" ---
-    # Рисуем рамку фиксированной ширины
     draw.rounded_rectangle((70, 320, 240, 365), radius=15, fill="#D1F2D8")
-    # Берем текст и подгоняем его под ширину рамки (170 пикселей минус отступы)
     proc_text, proc_font = fit_text(draw, t["processing"], 150, 24, is_arabic_text=(lang == "AR"))
     draw.text((85, 335), proc_text, font=proc_font, fill="#1E7D32")
     
@@ -326,7 +355,24 @@ def unblock_user(user_id):
         return True
     return False
 
-# --- НОВАЯ КОМАНДА /admin ---
+async def createpass_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ У тебя нет прав администратора.")
+        return
+    
+    try:
+        target_id = context.args[0]
+        new_pass = generate_password()
+        save_user_password(target_id, new_pass)
+        await update.message.reply_text(
+            f"✅ Пароль для ID `{target_id}` успешно создан!\n\n"
+            f"🔑 Пароль: `{new_pass}`\n\n"
+            f"Отправь этот пароль пользователю.",
+            parse_mode="Markdown"
+        )
+    except IndexError:
+        await update.message.reply_text("⚠️ Используй так: `/createpass 123456789`", parse_mode="Markdown")
+
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ У тебя нет прав администратора.")
@@ -334,12 +380,12 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     msg = (
         "👑 *АДМИН-ПАНЕЛЬ*\n\n"
-        "Вот список твоих доступных команд:\n\n"
-        "👥 `/users` — Список всех пользователей, которые зашли в бота.\n\n"
-        "🔗 `/links` — Последние 10 ссылок, которые присылали пользователи.\n\n"
-        "🚫 `/block [ID]` — Заблокировать пользователя по ID (например, `/block 123456789`).\n\n"
-        "✅ `/unblock [ID]` — Разблокировать пользователя.\n\n"
-        "ℹ️ `/start` — Перезапустить бота."
+        "Твои команды:\n\n"
+        "🔑 `/createpass [ID]` — Создать персональный пароль для юзера.\n\n"
+        "👥 `/users` — Список пользователей.\n\n"
+        "🔗 `/links` — Последние 10 ссылок.\n\n"
+        "🚫 `/block [ID]` — Заблокировать.\n\n"
+        "✅ `/unblock [ID]` — Разблокировать."
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
@@ -386,23 +432,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id in get_blocked_list():
         await update.message.reply_text("⛔ Вы заблокированы."); return
+    
     text = update.message.text.strip()
+    user_id = update.effective_user.id
+    
     if not context.user_data.get("authorized"):
-        if text == SECRET_PASSWORD:
+        # Проверка пароля для конкретного юзера
+        if check_user_password(user_id, text):
             context.user_data["authorized"] = True
-            user_id = update.effective_user.id
+            
+            # Проверяем, есть ли юзер в списке для уведомления
             username = update.effective_user.username or f"ID_{user_id}"
-            REGISTERED_USERS[user_id] = username
-            with open("users.txt", "a") as f: f.write(f"ID: {user_id}, @{username}\n")
-            try: await context.bot.send_message(chat_id=ADMIN_ID, text=f"🚨 *Новый пользователь!*\n\n👤 @{username}\n🆔 `{user_id}`\n\nЗаблокировать: `/block {user_id}`", parse_mode="Markdown")
-            except: pass
+            if user_id not in REGISTERED_USERS:
+                REGISTERED_USERS[user_id] = username
+                try: await context.bot.send_message(chat_id=ADMIN_ID, text=f"🚨 *Новый пользователь вошел!*\n\n👤 @{username}\n🆔 `{user_id}`", parse_mode="Markdown")
+                except: pass
+                
             await update.message.reply_text("✅ Доступ открыт.")
-        else: await update.message.reply_text("❌ Неверный пароль.")
+        else:
+            await update.message.reply_text("❌ Неверный пароль.")
         return ConversationHandler.END
     
     context.user_data["msg_ids"] = [update.message.message_id]
 
-    user_id = update.effective_user.id
     username = REGISTERED_USERS.get(user_id, update.effective_user.username or f"ID_{user_id}")
     link_match = re.search(r'(https?://\S+)', text)
     if link_match: 
@@ -536,9 +588,8 @@ async def run_bot():
         fallbacks=[CommandHandler("start", start)]
     )
     
-    # Добавили команду /admin
+    bot_app.add_handler(CommandHandler("createpass", createpass_command))
     bot_app.add_handler(CommandHandler("admin", admin_command))
-    
     bot_app.add_handler(CommandHandler("block", block_command))
     bot_app.add_handler(CommandHandler("unblock", unblock_command))
     bot_app.add_handler(CommandHandler("users", users_command))
@@ -551,7 +602,7 @@ async def run_bot():
     await bot_app.initialize()
     await bot_app.start()
     await bot_app.updater.start_polling()
-    print("✅ БОТ ЗАПУЩЕН (финальная версия)")
+    print("✅ БОТ ЗАПУЩЕН (с системой паролей)")
 
 if __name__ == "__main__":
     def start_bot_thread():
