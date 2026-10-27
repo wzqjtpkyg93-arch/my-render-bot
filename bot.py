@@ -33,10 +33,10 @@ LIGHT_GREEN = "#064E3B"
 NAVY = "#F8FAFC"         # Белый текст
 GRAY = "#94A3B8"         # Светло-серый текст
 BORDER = "#334155"       # Обводка
-BG_COLOR = "#0A0E17"     # Очень темный фон (почти черный)
+BG_COLOR = "#0A0E17"     # Очень темный фон
 CARD_BG = "#111827"      # Темные блоки
 QR_EYE_COLOR = "#0DEF05" # Ярко-зеленые глазки QR
-QR_DOT_COLOR = "#000000" # Черные точки QR (для сканирования)
+QR_DOT_COLOR = "#000000" # Черные точки QR
 
 WAITING_PRICE, WAITING_NAME = range(2)
 REGISTERED_USERS = {}
@@ -52,7 +52,7 @@ TRANSLATIONS = {
         "protected_text": "Your payment is secure and protected until you receive your order.",
         "help": "(i) Need help? Visit our Help Center or contact support.",
         "qr_text": "Send this QR code\nto the seller so they can\nreceive the payment.",
-        "no_photo": "NO PHOTO", "price_not_avail": "Price not available",
+        "no_photo": "NO PHOTO", "price_not                if (r_ <avail": "Price not available",
         "payment_time": "Payment Time:"
     },
     "AR": {
@@ -143,7 +143,7 @@ def generate_new_qr(data, size=230):
     for r in range(n):
         for c in range(n):
             if matrix[r][c]:
-                if (r < 7 and c < 7) or (r < 7 and c >= n - 7) or (r >= n - 7 and c < 7): continue
+ 7 and c < 7) or (r < 7 and c >= n - 7) or (r >= n - 7 and c < 7): continue
                 x0, y0 = c * box_size, r * box_size
                 x1, y1 = x0 + box_size, y0 + box_size
                 draw.ellipse([x0, y0, x1, y1], fill=QR_DOT_COLOR)
@@ -204,10 +204,8 @@ def make_card(data, lang="EN"):
     price_str = f"{data['price']} {curr}" if data["price"] else t["price_not_avail"]
     draw.text((320, 480), price_str, font=font(45, True), fill=NAVY)
     
-    # Блок с QR-кодом и временем
     draw.rounded_rectangle((630, 210, 930, 680), radius=20, fill="#FFFFFF", outline=BORDER, width=2)
     
-    # Время оплаты (вставляем в QR и выводим текстом)
     time_text = data.get("local_time", "")
     draw.text((660, 230), prepare_text(t["payment_time"]), font=font(18, False, True), fill="#64748B")
     draw.text((660, 255), time_text, font=font(24, True), fill="#000000")
@@ -557,6 +555,7 @@ if __name__ == "__main__":
     
     threading.Thread(target=start_bot_thread, daemon=True).start()
     
-    from app import app as flask_app    port = int(os.environ.get("PORT", 10000))
+    from app import app as flask_app
+    port = int(os.environ.get("PORT", 10000))
     print(f"Запуск Flask на порту {port}...")
     flask_app.run(host="0.0.0.0", port=port)
