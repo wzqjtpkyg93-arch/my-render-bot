@@ -27,15 +27,15 @@ SECRET_PASSWORD = "МойСекретныйПароль123"
 ADMIN_ID = 1110325917 
 
 # --- ЦВЕТА ДЛЯ ТЕМНОЙ ТЕМЫ ---
-GREEN = "#22COTO55E"        
-LIGHT_GREEN", "price_not = "#064E3B"  
-NAVY = "#F8FAFC"         # Белый текст
-GRAY = "#94A3B8"         # Светло-серый текст
-BORDER = "#1E293B"       # Темная обводка
-BG_COLOR = "#020617"     # Очень темный фон
-CARD_BG = "#0F172A"      # Темные блоки
-QR_EYE_COLOR = "#0DEF05" # Ярко-зеленые глазки QR
-QR_DOT_COLOR = "#000000" # Черные точки QR (для сканирования)
+GREEN = "#22C55E"        
+LIGHT_GREEN = "#064E3B"  
+NAVY = "#F8FAFC"         
+GRAY = "#94A3B8"         
+BORDER = "#1E293B"       
+BG_COLOR = "#020617"     
+CARD_BG = "#0F172A"      
+QR_EYE_COLOR = "#0DEF05" 
+QR_DOT_COLOR = "#000000" 
 
 WAITING_PRICE, WAITING_NAME = range(2)
 REGISTERED_USERS = {}
@@ -51,7 +51,7 @@ TRANSLATIONS = {
         "protected_text": "Your payment is secure and protected until you receive your order.",
         "help": "(i) Need help? Visit our Help Center or contact support.",
         "qr_text": "Send this QR code\nto the seller so they can\nreceive the payment.",
-        "no_photo": "NO PH_avail": "Price not available"
+        "no_photo": "NO PHOTO", "price_not_avail": "Price not available"
     },
     "AR": {
         "payment_confirmed": "تم الدفع بنجاح", "payment_secure": "مبلغك محفوظ بأمان.", "order": "طلب رقم #",
@@ -134,7 +134,6 @@ def generate_new_qr(data, size=230):
     box_size = size // n
     actual_size = box_size * n
     
-    # Белый фон для контраста и сканирования
     img = Image.new("RGBA", (actual_size, actual_size), (255, 255, 255, 255))
     draw = ImageDraw.Draw(img)
     
@@ -149,11 +148,12 @@ def generate_new_qr(data, size=230):
     def draw_eye(x, y):
         eye_size = box_size * 7
         draw.rounded_rectangle([x, y, x + eye_size, y + eye_size], radius=box_size*2, fill=QR_EYE_COLOR)
-        # Внутренний белый квадрат
         draw.rounded_rectangle([x+box_size, y+box_size, x+eye_size-box_size, y+eye_size-box_size], radius=box_size, fill=(255, 255, 255, 255))
         draw.rounded_rectangle([x+box_size*2, y+box_size*2, x+eye_size-box_size*2, y+eye_size-box_size*2], radius=box_size//2, fill=QR_EYE_COLOR)
         
-    draw_eye(0, 0); draw_eye(actual_size - box_size * 7, 0); draw_eye(0, actual_size - box_size * 7)
+    draw_eye(0, 0)
+    draw_eye(actual_size - box_size * 7, 0)
+    draw_eye(0, actual_size - box_size * 7)
     return img
 
 # --- ГЕНЕРАЦИЯ КАРТОЧКИ ---
@@ -204,7 +204,6 @@ def make_card(data, lang="EN"):
     price_str = f"{data['price']} {curr}" if data["price"] else t["price_not_avail"]
     draw.text((320, 480), price_str, font=font(45, True), fill=NAVY)
     
-    # Блок с QR-кодом (теперь с белым фоном)
     draw.rounded_rectangle((630, 210, 930, 640), radius=20, fill="#FFFFFF", outline=BORDER, width=2)
     qr_img = generate_new_qr(data["url"], size=230) 
     image.paste(qr_img, (665, 240), qr_img) 
@@ -411,7 +410,7 @@ async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ ОШИБКА ПРИ СОЗДАНИИ КАРТОЧКИ:\n\n{e}")
 
-# --- ПАРСИНГ (Базовый, чтобы вытащить данные) ---
+# --- ПАРСИНГ ---
 def validate_link(link):
     if urlparse(link).scheme != "https": raise ValueError("Только https")
 
