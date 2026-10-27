@@ -8,7 +8,8 @@ import string
 import unicodedata
 import threading
 import time
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
+from datetime import datetime, timezone, timedelta
 
 import requests
 import qrcode
@@ -26,16 +27,16 @@ TOKEN = os.environ.get("TOKEN")
 SECRET_PASSWORD = "МойСекретныйПароль123"
 ADMIN_ID = 1110325917 
 
-# --- ЦВЕТА ДЛЯ ТЕМНОЙ ТЕМЫ ---
+# --- ЦВЕТА ДЛЯ ЧЕРНОЙ ТЕМЫ (КАК НА СКРИНШОТЕ) ---
 GREEN = "#22C55E"        
 LIGHT_GREEN = "#064E3B"  
-NAVY = "#F8FAFC"         
-GRAY = "#94A3B8"         
-BORDER = "#1E293B"       
-BG_COLOR = "#020617"     
-CARD_BG = "#0F172A"      
-QR_EYE_COLOR = "#0DEF05" 
-QR_DOT_COLOR = "#000000" 
+NAVY = "#F8FAFC"         # Белый текст
+GRAY = "#94A3B8"         # Светло-серый текст
+BORDER = "#334155"       # Обводка
+BG_COLOR = "#0A0E17"     # Очень темный фон (почти черный)
+CARD_BG = "#111827"      # Темные блоки
+QR_EYE_COLOR = "#0DEF05" # Ярко-зеленые глазки QR
+QR_DOT_COLOR = "#000000" # Черные точки QR (для сканирования)
 
 WAITING_PRICE, WAITING_NAME = range(2)
 REGISTERED_USERS = {}
@@ -51,7 +52,8 @@ TRANSLATIONS = {
         "protected_text": "Your payment is secure and protected until you receive your order.",
         "help": "(i) Need help? Visit our Help Center or contact support.",
         "qr_text": "Send this QR code\nto the seller so they can\nreceive the payment.",
-        "no_photo": "NO PHOTO", "price_not_avail": "Price not available"
+        "no_photo": "NO PHOTO", "price_not_avail": "Price not available",
+        "payment_time": "Payment Time:"
     },
     "AR": {
         "payment_confirmed": "تم الدفع بنجاح", "payment_secure": "مبلغك محفوظ بأمان.", "order": "طلب رقم #",
@@ -61,7 +63,8 @@ TRANSLATIONS = {
         "protected": "محمي بواسطة OpenSooq", "protected_text": "مبلغك آمن ومحمي لحين استلام طلبك.",
         "help": "(i) تحتاج مساعدة؟ زر مركز المساعدة أو تواصل معنا.",
         "qr_text": "أرسل رمز الـ QR\nللبائع عشان يقدر\nيستلم المبلغ.",
-        "no_photo": "لا توجد صورة", "price_not_avail": "السعر غير متوفر"
+        "no_photo": "لا توجد صورة", "price_not_avail": "السعر غير متوفر",
+        "payment_time": "وقت الدفع:"
     }
 }
 
@@ -159,7 +162,7 @@ def generate_new_qr(data, size=230):
 # --- ГЕНЕРАЦИЯ КАРТОЧКИ ---
 def make_card(data, lang="EN"):
     t = TRANSLATIONS[lang]
-    W, H = 1000, 1450 
+    W, H = 1000, 1480 
     image = Image.new("RGB", (W, H), BG_COLOR)
     draw = ImageDraw.Draw(image)
     
@@ -194,9 +197,6 @@ def make_card(data, lang="EN"):
         draw.text((130, 500), t["no_photo"], font=font(20, True), fill=GRAY)
         
     title_text = data["title"]
-    if lang == "AR" and title_text:
-        title_text = translate_text(title_text, "AR")
-        
     title, t_font = fit_text(draw, title_text, 310, 26, is_arabic_text=(lang == "AR"))
     draw.text((320, 410), title, font=t_font, fill=NAVY)
     
@@ -204,11 +204,18 @@ def make_card(data, lang="EN"):
     price_str = f"{data['price']} {curr}" if data["price"] else t["price_not_avail"]
     draw.text((320, 480), price_str, font=font(45, True), fill=NAVY)
     
-    draw.rounded_rectangle((630, 210, 930, 640), radius=20, fill="#FFFFFF", outline=BORDER, width=2)
-    qr_img = generate_new_qr(data["url"], size=230) 
-    image.paste(qr_img, (665, 240), qr_img) 
+    # Блок с QR-кодом и временем
+    draw.rounded_rectangle((630, 210, 930, 680), radius=20, fill="#FFFFFF", outline=BORDER, width=2)
     
-    draw.multiline_text((780, 495), prepare_text(t["qr_text"]), font=font(18, False, True), fill=GRAY, align="center", anchor="ma", spacing=4)
+    # Время оплаты (вставляем в QR и выводим текстом)
+    time_text = data.get("local_time", "")
+    draw.text((660, 230), prepare_text(t["payment_time"]), font=font(18, False, True), fill="#64748B")
+    draw.text((660, 255), time_text, font=font(24, True), fill="#000000")
+    
+    qr_img = generate_new_qr(data["url_with_time"], size=200) 
+    image.paste(qr_img, (680, 300), qr_img) 
+    
+    draw.multiline_text((780, 520), prepare_text(t["qr_text"]), font=font(16, False, True), fill="#64748B", align="center", anchor="ma", spacing=4)
     draw.line((70, 650, W-70, 650), fill=BORDER, width=2)
     
     draw.rounded_rectangle((70, 690, 120, 725), radius=5, outline=GRAY, width=4)
@@ -259,7 +266,7 @@ def make_card(data, lang="EN"):
     draw.text((150, 1225), prepare_text(t["protected_text"]), font=font(20, False, True), fill=GRAY)
     draw.text((W-80, 1200), ">", font=font(40, True), fill=GRAY)
     
-    draw.rounded_rectangle((40, 1310, W-40, 1390), radius=15, fill="#0F172A")
+    draw.rounded_rectangle((40, 1310, W-40, 1390), radius=15, fill="#111827")
     draw.text((70, 1335), prepare_text(t["help"]), font=font(22, False, True), fill=GRAY)
     
     output = io.BytesIO()
@@ -410,26 +417,25 @@ async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ ОШИБКА ПРИ СОЗДАНИИ КАРТОЧКИ:\n\n{e}")
 
-# --- ПАРСИНГ ---
-def validate_link(link):
-    if urlparse(link).scheme != "https": raise ValueError("Только https")
+# --- ПАРСИНГ И ВРЕМЯ ---
+def get_time_for_currency(currency):
+    now_utc = datetime.now(timezone.utc)
+    if not currency:
+        return now_utc.strftime("%Y-%m-%d %H:%M UTC"), "UTC"
+        
+    curr = currency.upper()
+    if curr in ["KWD", "BHD", "OMR"]:
+        tz = timezone(timedelta(hours=3))
+        return now_utc.astimezone(tz).strftime("%Y-%m-%d %H:%M (Kuwait)"), "KWT"
+    elif curr in ["AED", "SAR"]:
+        tz = timezone(timedelta(hours=4))
+        return now_utc.astimezone(tz).strftime("%Y-%m-%d %H:%M (UAE)"), "UAE"
+    else:
+        return now_utc.strftime("%Y-%m-%d %H:%M (UTC)"), "UTC"
 
 def get_meta(soup, name):
     tag = soup.find("meta", property=name) or soup.find("meta", attrs={"name": name})
     return tag.get("content", "").strip() if tag else ""
-
-def find_product(obj):
-    if isinstance(obj, dict):
-        kind = obj.get("@type")
-        if kind == "Product" or (isinstance(kind, list) and "Product" in kind): return obj
-        for value in obj.values():
-            res = find_product(value)
-            if res: return res
-    if isinstance(obj, list):
-        for value in obj:
-            res = find_product(value)
-            if res: return res
-    return None
 
 def get_listing(full_text):
     url_match = re.search(r'(https?://\S+)', full_text)
@@ -442,28 +448,14 @@ def get_listing(full_text):
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
     
-    title, price, currency = None, None, None
-    site_title = get_meta(soup, "og:title") or get_meta(soup, "twitter:title")
-    if site_title and "None" not in site_title and "OpenSooq Support" not in site_title: title = site_title
-
-    for script in soup.find_all("script", type="application/ld+json"):
-        try:
-            obj = json.loads(script.string or script.get_text())
-            product = find_product(obj)
-            if not product: continue
-            title = product.get("name") or title
-            offers = product.get("offers", {})
-            if isinstance(offers, list): offers = offers[0] if offers else {}
-            if isinstance(offers, dict):
-                price = offers.get("price")
-                currency = offers.get("priceCurrency")
-        except: continue
-
-    if not price:
-        match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QR|RUB|EUR)", full_text, re.IGNORECASE)
-        if match:
-            price = match.group(1)
-            currency = match.group(2).upper()
+    title = get_meta(soup, "og:title") or "OpenSooq Delivery"
+    price = None
+    currency = None
+    
+    match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QR|RUB|EUR)", full_text, re.IGNORECASE)
+    if match:
+        price = match.group(1)
+        currency = match.group(2).upper()
 
     image_url = get_meta(soup, "og:image") or get_meta(soup, "twitter:image")
     match_id = re.search(r"(\d{8,12})", response.url)
@@ -472,6 +464,11 @@ def get_listing(full_text):
     order_id = f"OS-{random.randint(100000, 999999)}"
     trans_id = f"OSQ-{random.randint(10000000, 99999999)}"
     track_id = f"OS-DEL-{random.randint(1000000, 9999999)}"
+    
+    local_time_str, tz_abbr = get_time_for_currency(currency)
+    
+    # Добавляем время в конец URL, чтобы QR-код содержал дату и время
+    url_with_time = f"{response.url}?t={quote(local_time_str)}"
     
     product_image = None
     if image_url:
@@ -482,7 +479,8 @@ def get_listing(full_text):
         except: pass
 
     return {"title": title, "price": price, "currency": currency, "listing_id": listing_id, 
-            "image": product_image, "url": response.url, "track_id": track_id, "order_id": order_id, "trans_id": trans_id}
+            "image": product_image, "url": response.url, "url_with_time": url_with_time, "local_time": local_time_str,
+            "track_id": track_id, "order_id": order_id, "trans_id": trans_id}
 
 # --- АДМИНКА ---
 def get_blocked_list():
@@ -548,7 +546,7 @@ async def run_bot():
     await bot_app.initialize()
     await bot_app.start()
     await bot_app.updater.start_polling()
-    print("✅ БОТ ЗАПУЩЕН (темный дизайн)")
+    print("✅ БОТ ЗАПУЩЕН (черная тема с QR-временем)")
 
 if __name__ == "__main__":
     def start_bot_thread():
@@ -559,7 +557,6 @@ if __name__ == "__main__":
     
     threading.Thread(target=start_bot_thread, daemon=True).start()
     
-    from app import app as flask_app
-    port = int(os.environ.get("PORT", 10000))
+    from app import app as flask_app    port = int(os.environ.get("PORT", 10000))
     print(f"Запуск Flask на порту {port}...")
     flask_app.run(host="0.0.0.0", port=port)
