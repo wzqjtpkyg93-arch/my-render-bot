@@ -14,7 +14,6 @@ from datetime import datetime, timezone, timedelta
 import requests
 import qrcode
 import arabic_reshaper
-from flask import Flask
 from bidi.algorithm import get_display
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -27,16 +26,16 @@ TOKEN = os.environ.get("TOKEN")
 SECRET_PASSWORD = "МойСекретныйПароль123"
 ADMIN_ID = 1110325917 
 
-# --- ЦВЕТА ДЛЯ ЧЕРНОЙ ТЕМЫ (КАК НА СКРИНШОТЕ) ---
+# --- ЦВЕТА ДЛЯ ЧЕРНОЙ ТЕМЫ ---
 GREEN = "#22C55E"        
 LIGHT_GREEN = "#064E3B"  
-NAVY = "#F8FAFC"         # Белый текст
-GRAY = "#94A3B8"         # Светло-серый текст
-BORDER = "#334155"       # Обводка
-BG_COLOR = "#0A0E17"     # Очень темный фон
-CARD_BG = "#111827"      # Темные блоки
-QR_EYE_COLOR = "#0DEF05" # Ярко-зеленые глазки QR
-QR_DOT_COLOR = "#000000" # Черные точки QR
+NAVY = "#F8FAFC"         
+GRAY = "#94A3B8"         
+BORDER = "#334155"       
+BG_COLOR = "#0A0E17"     
+CARD_BG = "#111827"      
+QR_EYE_COLOR = "#0DEF05" 
+QR_DOT_COLOR = "#000000" 
 
 WAITING_PRICE, WAITING_NAME = range(2)
 REGISTERED_USERS = {}
@@ -52,7 +51,7 @@ TRANSLATIONS = {
         "protected_text": "Your payment is secure and protected until you receive your order.",
         "help": "(i) Need help? Visit our Help Center or contact support.",
         "qr_text": "Send this QR code\nto the seller so they can\nreceive the payment.",
-        "no_photo": "NO PHOTO", "price_not                if (r_ <avail": "Price not available",
+        "no_photo": "NO PHOTO", "price_not_avail": "Price not available",
         "payment_time": "Payment Time:"
     },
     "AR": {
@@ -143,7 +142,7 @@ def generate_new_qr(data, size=230):
     for r in range(n):
         for c in range(n):
             if matrix[r][c]:
- 7 and c < 7) or (r < 7 and c >= n - 7) or (r >= n - 7 and c < 7): continue
+                if (r < 7 and c < 7) or (r < 7 and c >= n - 7) or (r >= n - 7 and c < 7): continue
                 x0, y0 = c * box_size, r * box_size
                 x1, y1 = x0 + box_size, y0 + box_size
                 draw.ellipse([x0, y0, x1, y1], fill=QR_DOT_COLOR)
@@ -465,7 +464,6 @@ def get_listing(full_text):
     
     local_time_str, tz_abbr = get_time_for_currency(currency)
     
-    # Добавляем время в конец URL, чтобы QR-код содержал дату и время
     url_with_time = f"{response.url}?t={quote(local_time_str)}"
     
     product_image = None
@@ -547,15 +545,4 @@ async def run_bot():
     print("✅ БОТ ЗАПУЩЕН (черная тема с QR-временем)")
 
 if __name__ == "__main__":
-    def start_bot_thread():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(run_bot())
-        loop.run_forever()
-    
-    threading.Thread(target=start_bot_thread, daemon=True).start()
-    
-    from app import app as flask_app
-    port = int(os.environ.get("PORT", 10000))
-    print(f"Запуск Flask на порту {port}...")
-    flask_app.run(host="0.0.0.0", port=port)
+    run_bot()
