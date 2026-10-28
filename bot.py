@@ -7,8 +7,8 @@ import string
 import unicodedata
 import threading
 from urllib.parse import quote
-from datetime import datetime, timezone, timedelta
-from zoneinfo import ZoneInfo # Встроенная библиотека для часовых поясов
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import requests
 import qrcode
@@ -35,10 +35,50 @@ CARD_BG = "#ffffff"
 QR_EYE_COLOR = "#1cb95d"
 QR_DOT_COLOR = "#1a2b4c"
 
+# === ИСПРАВЛЕННЫЙ СЛОВАРЬ ПЕРЕВОДОВ (СТРОКА 39 ТЕПЕРЬ В ПОРЯДКЕ) ===
 TRANSLATIONS = {
-    "EN": {"payment_confirmed": "Payment confirmed", "payment_secure": "Your payment has been secured.", "order": "Order #", "processing": "Processing", "transaction_id": "Transaction ID", "tracking_number": "Tracking Number", "delivery_status": "Delivery Status", "in_progress": "In progress", "waiting_seller": "Waiting for the seller\nto ( receive the funds", "seller_confirmed": "SellerGMT confirmed", "preparing": "Preparing shipment", "cou+rier": "Courier3 pickup", "protected": "Protected by OpenSooq", "protected)
-_text": "Your payment is secure        and protected until you receive your order.", "help": "(i) Need help? Visit our Help Center or contact support.", "qr_text": "Send this QR code\nto the seller so they can\nreceive the payment.", "no_photo": "NO PHOTO", "price_not_avail": "Price not available", "payment_time": "Payment Time:"},
-    "AR": {"payment_confirmed": "تم الدفع بنجاح", "payment_secure": "مبلغك محفوظ بأمان.", "order": "طلب رقم #", "processing": "جاري المعالجة", "transaction_id": "رقم العملية", "tracking_number": "رقم التتبع", "delivery_status": "حالة التوصيل", "in_progress": "جاري التنفيذ", "waiting_seller": "بانتظار البائع\nلاستلام المبلغ", "seller_confirmed": "تم تأكيد البائع", "preparing": "جاري التجهيز", "courier": "استلام المندوب", "protected": "محمي بواسطة OpenSooq", "protected_text": "مبلغك آمن ومحمي لحين استلام طلبك.", "help": "(i) تحتاج مساعدة؟ زر مركز المساعدة أو تواصل معنا.", "qr_text": "أرسل رمز الـ QR\nللبائع عشان يقدر\nيستلم المبلغ.", "no_photo": "لا توجد صورة", "price_not_avail": "السعر غير متوفر", "payment_time": "وقت الدفع:"}
+    "EN": {
+        "payment_confirmed": "Payment confirmed", 
+        "payment_secure": "Your payment has been secured.", 
+        "order": "Order #", 
+        "processing": "Processing", 
+        "transaction_id": "Transaction ID", 
+        "tracking_number": "Tracking Number", 
+        "delivery_status": "Delivery Status", 
+        "in_progress": "In progress", 
+        "waiting_seller": "Waiting for the seller\nto receive the funds", 
+        "seller_confirmed": "Seller confirmed", 
+        "preparing": "Preparing shipment", 
+        "courier": "Courier pickup", 
+        "protected": "Protected by OpenSooq", 
+        "protected_text": "Your payment is secure and protected until you receive your order.", 
+        "help": "(i) Need help? Visit our Help Center or contact support.", 
+        "qr_text": "Send this QR code\nto the seller so they can\nreceive the payment.", 
+        "no_photo": "NO PHOTO", 
+        "price_not_avail": "Price not available", 
+        "payment_time": "Payment Time:"
+    },
+    "AR": {
+        "payment_confirmed": "تم الدفع بنجاح", 
+        "payment_secure": "مبلغك محفوظ بأمان.", 
+        "order": "طلب رقم #", 
+        "processing": "جاري المعالجة", 
+        "transaction_id": "رقم العملية", 
+        "tracking_number": "رقم التتبع", 
+        "delivery_status": "حالة التوصيل", 
+        "in_progress": "جاري التنفيذ", 
+        "waiting_seller": "بانتظار البائع\nلاستلام المبلغ", 
+        "seller_confirmed": "تم تأكيد البائع", 
+        "preparing": "جاري التجهيز", 
+        "courier": "استلام المندوب", 
+        "protected": "محمي بواسطة OpenSooq", 
+        "protected_text": "مبلغك آمن ومحمي لحين استلام طلبك.", 
+        "help": "(i) تحتاج مساعدة؟ زر مركز المساعدة أو تواصل معنا.", 
+        "qr_text": "أرسل رمز الـ QR\nللبائع عشان يقدر\nيستلم المبلغ.", 
+        "no_photo": "لا توجد صورة", 
+        "price_not_avail": "السعر غير متوفر", 
+        "payment_time": "وقت الدفع:"
+    }
 }
 
 # --- ФУНКЦИИ РАБОТЫ С ДАННЫМИ ---
@@ -91,22 +131,19 @@ async def delete_messages(ctx, chat_id, ids):
 
 # --- ФУНКЦИИ ВРЕМЕНИ И ВАЛЮТ ---
 def get_time_for_currency(curr):
-    """Определяет часовой пояс по валюте и возвращает актуальное время страны"""
     now = datetime.now(timezone.utc)
-    
-    # Словарь соответствия валют и часовых поясов
-    # TZ: Часовой пояс, Suffix: Текст для отображения в карточке
     timezones = {
-        "KWD": ("Asia/Kuwait", "KWT"),   # Кувейт (GMT+3)
-        "BHD": ("Asia/Bahrain", "BHR"),  # Бахрейн (GMT+3)
-        "OMR": ("Asia/Muscat", "OMR"),   # Оман (GMT+4)
-        "SAR": ("Asia/Riyadh", "KSA"),   # Саудовская Аравия (GMT+3)
-        "AED": ("Asia/Dubai", "UAE"),    # ОАЭ (GMT+4)
-        "QAR": ("Asia/Qatar", "QAT"),    # Катар "EGP": ("Africa/Cairo", "EGY"),  # Египет (GMT+2 / +3 при переходе)
-        "JOD": ("Asia/Amman", "JOR"),    # Иордания (GMT+3)
-        "RUB": ("Europe/Moscow", "MSK"), # Россия (GMT+3)
-        "USD": ("UTC", "UTC"),           # США (базово UTC)
-        "EUR": ("Europe/Berlin", "CET")  # Европа (базово CET)
+        "KWD": ("Asia/Kuwait", "KWT"),
+        "BHD": ("Asia/Bahrain", "BHR"),
+        "OMR": ("Asia/Muscat", "OMR"),
+        "SAR": ("Asia/Riyadh", "KSA"),
+        "AED": ("Asia/Dubai", "UAE"),
+        "QAR": ("Asia/Qatar", "QAT"),
+        "EGP": ("Africa/Cairo", "EGY"),
+        "JOD": ("Asia/Amman", "JOR"),
+        "RUB": ("Europe/Moscow", "MSK"),
+        "USD": ("UTC", "UTC"),
+        "EUR": ("Europe/Berlin", "CET")
     }
 
     curr = curr.upper() if curr else ""
@@ -116,15 +153,13 @@ def get_time_for_currency(curr):
         try:
             tz = ZoneInfo(tz_name)
             local_time = now.astimezone(tz)
-            return local_time.strftime(f"%Y-%m-%d %    
-H:%M ({   suffix})"), suffix
- draw        except:
-            pass # Если не удалось загрузить пояс, покажет UTC ниже
-
-    # По умолчанию, если валюта неизвестна или не передана
+            return local_time.strftime(f"%Y-%m-%d %H:%M ({suffix})"), suffix
+        except:
+            pass
+            
     return now.strftime("%Y-%m-%d %H:%M UTC"), "UTC"
 
-# ---.rounded_ ГЕНЕРАЦИЯ ИЗОБРАЖЕНИЯ ---
+# --- ГЕНЕРАЦИЯ ИЗОБРАЖЕНИЯ ---
 def font(size, bold=False):
     path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     try: return ImageFont.truetype(path, size)
@@ -136,14 +171,11 @@ def prepare_text(val):
     return val.strip()
 
 def fit_text(draw, val, max_w, size=28):
-    """Функция подбора шрифта. Если текст длинный - уменьшает размер."""
     val = prepare_text(val)
     f = font(size, True)
-    # Если текст не влезает, уменьшаем размер шрифта
     while size > 12 and draw.textbbox((0, 0), val, font=f)[2] > max_w:
         size -= 1
         f = font(size, True)
-    # Если даже при минимальном размере не влезает, обрезаем
     while val and draw.textbbox((0, 0), val, font=f)[2] > max_w: 
         val = val[:-2] + "…"
     return val, f
@@ -180,18 +212,17 @@ def make_card(data, lang="EN"):
         draw.line((cx-15, cy, cx-5, cy+10), fill="white", width=6)
         draw.line((cx-5, cy+10, cx+15, cy-10), fill="white", width=6)
 
-    # 1. Баннер
     draw.rounded_rectangle((40, 40, W-40, 160), radius=20, fill=LIGHT_GREEN)
     check(70, 65, 70, GREEN)
     draw.text((160, 70), prepare_text(t["payment_confirmed"]), font=font(36, True), fill=NAVY)
     draw.text((160, 115), prepare_text(t["payment_secure"]), font=font(24), fill=GRAY)
     draw.text((W-80, 90), ">", font=font(40, True), fill=GRAY)
 
-    # 2. Основная карточка
     draw.rounded_rectangle((40, 190, W-40, 850), radius=20, fill=CARD_BG, outline=BORDER, width=2)
     draw.text((70, 220), prepare_text(t["order"]), font=font(24), fill=GRAY)
     draw.text((70, 250), data["order_id"], font=font(55, True), fill=NAVY)
-rectangle((70, 320, 240, 365), radius=15, fill=LIGHT_GREEN)
+    
+    draw.rounded_rectangle((70, 320, 240, 365), radius=15, fill=LIGHT_GREEN)
     pt, pf = fit_text(draw, t["processing"], 150, 24)
     draw.text((85, 335), pt, font=pf, fill=GREEN)
     
@@ -210,11 +241,9 @@ rectangle((70, 320, 240, 365), radius=15, fill=LIGHT_GREEN)
     price = f"{data['price']} {curr}" if data["price"] else t["price_not_avail"]
     draw.text((320, 480), price, font=font(45, True), fill=NAVY)
 
-    # QR-блок
     draw.rounded_rectangle((630, 210, 930, 680), radius=20, fill=CARD_BG, outline=BORDER, width=2)
     draw.text((660, 230), prepare_text(t["payment_time"]), font=font(18), fill=GRAY)
     
-    # ИСПРАВЛЕНИЕ: Используем fit_text для времени, чтобы оно не вылезало за границы
     time_text = data.get("local_time", "")
     fitted_time, time_font = fit_text(draw, time_text, max_w=250, size=22) 
     draw.text((660, 255), fitted_time, font=time_font, fill=NAVY)
@@ -238,7 +267,6 @@ rectangle((70, 320, 240, 365), radius=15, fill=LIGHT_GREEN)
     draw.text((610, 680), prepare_text(t["tracking_number"]), font=font(22), fill=GRAY)
     draw.text((610, 710), data["track_id"], font=font(32, True), fill=NAVY)
 
-    # 3. Статус
     draw.rounded_rectangle((40, 880, W-40, 1130), radius=20, fill=CARD_BG, outline=BORDER, width=2)
     tx, ty = 70, 910
     draw.rectangle((tx, ty+10, tx+40, ty+40), outline=NAVY, width=4)
@@ -265,14 +293,12 @@ rectangle((70, 320, 240, 365), radius=15, fill=LIGHT_GREEN)
             draw.ellipse((p-20, ly-20, p+20, ly+20), fill=CARD_BG, outline=BORDER, width=3)
             draw.text((p-80, ly+35), prepare_text(lbls[i]), font=font(18), fill=GRAY)
 
-    # 4. Защита
     draw.rounded_rectangle((40, 1160, W-40, 1280), radius=20, fill=CARD_BG, outline=BORDER, width=2)
     check(70, 1185, 60, GREEN)
     draw.text((150, 1185), prepare_text(t["protected"]), font=font(30, True), fill=NAVY)
     draw.text((150, 1225), prepare_text(t["protected_text"]), font=font(20), fill=GRAY)
     draw.text((W-80, 1200), ">", font=font(40, True), fill=GRAY)
 
-    # 5. Футер
     draw.rounded_rectangle((40, 1310, W-40, 1390), radius=15, fill="#eef2f6")
     draw.text((70, 1335), prepare_text(t["help"]), font=font(22), fill=GRAY)
     
@@ -293,13 +319,11 @@ def get_listing(txt):
     soup = BeautifulSoup(r.text, "html.parser")
     title = get_meta(soup, "og:title") or "OpenSooq Delivery"
     
-    # Ищем цену и валюту в тексте сообщения (если ввели) или на странице
     price = curr = None
     match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QAR|RUB|EUR)", txt, re.I)
     if match: 
         price, curr = match.group(1), match.group(2).upper()
     else:
-        # Если в сообщении не нашли, ищем на странице сайта (очень грубый поиск)
         price_match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QAR|RUB|EUR)", soup.get_text(), re.I)
         if price_match:
             price, curr = price_match.group(1), price_match.group(2).upper()
@@ -311,9 +335,7 @@ def get_listing(txt):
     tid = f"OSQ-{random.randint(10000000, 99999999)}"
     trid = f"OS-DEL-{random.randint(1000000, 9999999)}"
     
-    # Получаем время исходя из валюты
     ltime, _ = get_time_for_currency(curr)
-    
     url_t = f"{r.url}?t={quote(ltime)}"
     p_img = None
     if img_url:
@@ -360,7 +382,6 @@ async def get_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         m = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QAR|RUB|EUR)", txt, re.I)
         if m: 
             ctx.user_data["card_data"]["price"], ctx.user_data["card_data"]["currency"] = m.group(1), m.group(2).upper()
-            # Пересчитываем время, так как валюта изменилась
             ltime, _ = get_time_for_currency(ctx.user_data["card_data"]["currency"])
             ctx.user_data["card_data"]["local_time"] = ltime
             ctx.user_data["card_data"]["url_with_time"] = f"{ctx.user_data['card_data']['url']}?t={quote(ltime)}"
@@ -435,7 +456,6 @@ async def unblock_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     try: unblock_user(int(ctx.args[0])); await update.message.reply_text("✅ Разблокирован!")
     except: await update.message.reply_text("⚠️ /unblock 123456789", parse_mode="Markdown")
-
 
 # === ЗАПУСК (WEB + BOT) ===
 web_app = Flask(__name__)
