@@ -5,6 +5,7 @@ import re
 import random
 import string
 import unicodedata
+import threading
 from urllib.parse import quote
 from datetime import datetime, timezone, timedelta
 
@@ -14,6 +15,7 @@ import arabic_reshaper
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
+from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, ContextTypes
 
@@ -21,22 +23,23 @@ TOKEN = os.environ.get("TOKEN")
 ADMIN_ID = 1110325917
 WAITING_PRICE, WAITING_NAME = range(2)
 
-# === ОБНОВЛЕННАЯ СВЕТЛАЯ ПАЛИТРА ===
-GREEN = "#1cb95d"           # Основной зеленый (чуть темнее для светлого фона)
-LIGHT_GREEN = "#e8f7ee"     # Светло-зеленый для плашек
-NAVY = "#1a2b4c"            # Темно-синий для основного текста (замена белого)
-GRAY = "#6b7a99"            # Серый для второстепенного текста
-BORDER = "#e2e8f0"          # Цвет границ карточек
-BG_COLOR = "#f4f6f9"        # Фон всего изображения
-CARD_BG = "#ffffff"         # Фон карточек (белый)
-QR_EYE_COLOR = "#1cb95d"    # Цвет "глаз" QR-кода (зеленый)
-QR_DOT_COLOR = "#1a2b4c"    # Цвет точек QR-кода (темно-синий)
+# === СВЕТЛАЯ ПАЛИТРА ===
+GREEN = "#1cb95d"
+LIGHT_GREEN = "#e8f7ee"
+NAVY = "#1a2b4c"
+GRAY = "#6b7a99"
+BORDER = "#e2e8f0"
+BG_COLOR = "#f4f6f9"
+CARD_BG = "#ffffff"
+QR_EYE_COLOR = "#1cb95d"
+QR_DOT_COLOR = "#1a2b4c"
 
 TRANSLATIONS = {
     "EN": {"payment_confirmed": "Payment confirmed", "payment_secure": "Your payment has been secured.", "order": "Order #", "processing": "Processing", "transaction_id": "Transaction ID", "tracking_number": "Tracking Number", "delivery_status": "Delivery Status", "in_progress": "In progress", "waiting_seller": "Waiting for the seller\nto receive the funds", "seller_confirmed": "Seller confirmed", "preparing": "Preparing shipment", "courier": "Courier pickup", "protected": "Protected by OpenSooq", "protected_text": "Your payment is secure and protected until you receive your order.", "help": "(i) Need help? Visit our Help Center or contact support.", "qr_text": "Send this QR code\nto the seller so they can\nreceive the payment.", "no_photo": "NO PHOTO", "price_not_avail": "Price not available", "payment_time": "Payment Time:"},
     "AR": {"payment_confirmed": "تم الدفع بنجاح", "payment_secure": "مبلغك محفوظ بأمان.", "order": "طلب رقم #", "processing": "جاري المعالجة", "transaction_id": "رقم العملية", "tracking_number": "رقم التتبع", "delivery_status": "حالة التوصيل", "in_progress": "جاري التنفيذ", "waiting_seller": "بانتظار البائع\nلاستلام المبلغ", "seller_confirmed": "تم تأكيد البائع", "preparing": "جاري التجهيز", "courier": "استلام المندوب", "protected": "محمي بواسطة OpenSooq", "protected_text": "مبلغك آمن ومحمي لحين استلام طلبك.", "help": "(i) تحتاج مساعدة؟ زر مركز المساعدة أو تواصل معنا.", "qr_text": "أرسل رمز الـ QR\nللبائع عشان يقدر\nيستلم المبلغ.", "no_photo": "لا توجد صورة", "price_not_avail": "السعر غير متوفر", "payment_time": "وقت الدفع:"}
 }
 
+# --- ФУНКЦИИ РАБОТЫ С ДАННЫМИ ---
 def generate_password(length=8):
     return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(length))
 
@@ -84,6 +87,7 @@ async def delete_messages(ctx, chat_id, ids):
             await asyncio.sleep(0.1)
         except: pass
 
+# --- ГЕНЕРАЦИЯ ИЗОБРАЖЕНИЯ ---
 def font(size, bold=False):
     path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     try: return ImageFont.truetype(path, size)
@@ -105,7 +109,6 @@ def generate_new_qr(data, size=230):
     qr.add_data(data); qr.make(fit=True)
     matrix = qr.get_matrix(); n = len(matrix)
     box = size // n; actual = box * n
-    # Делаем фон QR-кода белым
     img = Image.new("RGBA", (actual, actual), (255, 255, 255, 255))
     draw = ImageDraw.Draw(img)
     for r in range(n):
@@ -133,24 +136,22 @@ def make_card(data, lang="EN"):
         draw.line((cx-15, cy, cx-5, cy+10), fill="white", width=6)
         draw.line((cx-5, cy+10, cx+15, cy-10), fill="white", width=6)
 
-    # 1. Верхний баннер (Светло-зеленый)
+    # 1. Баннер
     draw.rounded_rectangle((40, 40, W-40, 160), radius=20, fill=LIGHT_GREEN)
     check(70, 65, 70, GREEN)
     draw.text((160, 70), prepare_text(t["payment_confirmed"]), font=font(36, True), fill=NAVY)
     draw.text((160, 115), prepare_text(t["payment_secure"]), font=font(24), fill=GRAY)
     draw.text((W-80, 90), ">", font=font(40, True), fill=GRAY)
 
-    # 2. Основная карточка (Белая)
+    # 2. Основная карточка
     draw.rounded_rectangle((40, 190, W-40, 850), radius=20, fill=CARD_BG, outline=BORDER, width=2)
     draw.text((70, 220), prepare_text(t["order"]), font=font(24), fill=GRAY)
     draw.text((70, 250), data["order_id"], font=font(55, True), fill=NAVY)
     
-    # Плашка Processing
     draw.rounded_rectangle((70, 320, 240, 365), radius=15, fill=LIGHT_GREEN)
     pt, pf = fit_text(draw, t["processing"], 150, 24)
     draw.text((85, 335), pt, font=pf, fill=GREEN)
     
-    # Фото товара
     if data["image"]:
         p_img = ImageOps.fit(data["image"], (220, 220), Image.Resampling.LANCZOS)
         mask = Image.new("L", p_img.size, 0)
@@ -166,19 +167,16 @@ def make_card(data, lang="EN"):
     price = f"{data['price']} {curr}" if data["price"] else t["price_not_avail"]
     draw.text((320, 480), price, font=font(45, True), fill=NAVY)
 
-    # Блок с QR-кодом (Белая карточка)
+    # QR-блок
     draw.rounded_rectangle((630, 210, 930, 680), radius=20, fill=CARD_BG, outline=BORDER, width=2)
     draw.text((660, 230), prepare_text(t["payment_time"]), font=font(18), fill=GRAY)
     draw.text((660, 255), data.get("local_time", ""), font=font(24, True), fill=NAVY)
-    
     qr = generate_new_qr(data["url_with_time"], size=200) 
     img.paste(qr, (680, 300), qr) 
-    
     draw.multiline_text((780, 520), prepare_text(t["qr_text"]), font=font(16), fill=GRAY, align="center", anchor="ma", spacing=4)
     
     draw.line((70, 650, W-70, 650), fill=BORDER, width=2)
     
-    # Транзакция и Трекинг
     draw.rounded_rectangle((70, 690, 120, 725), radius=5, outline=GRAY, width=4)
     draw.line((70, 700, 120, 700), fill=GRAY, width=4)
     draw.text((140, 680), prepare_text(t["transaction_id"]), font=font(22), fill=GRAY)
@@ -192,7 +190,7 @@ def make_card(data, lang="EN"):
     draw.text((610, 680), prepare_text(t["tracking_number"]), font=font(22), fill=GRAY)
     draw.text((610, 710), data["track_id"], font=font(32, True), fill=NAVY)
 
-    # 3. Карточка Доставки
+    # 3. Статус
     draw.rounded_rectangle((40, 880, W-40, 1130), radius=20, fill=CARD_BG, outline=BORDER, width=2)
     tx, ty = 70, 910
     draw.rectangle((tx, ty+10, tx+40, ty+40), outline=NAVY, width=4)
@@ -201,11 +199,9 @@ def make_card(data, lang="EN"):
     draw.ellipse((tx+45, ty+35, tx+55, ty+45), fill=NAVY)
     draw.text((150, 910), prepare_text(t["delivery_status"]), font=font(34, True), fill=NAVY)
     
-    # Плашка In Progress
     draw.rounded_rectangle((750, 905, 930, 950), radius=15, fill=LIGHT_GREEN)
     draw.text((780, 915), prepare_text(t["in_progress"]), font=font(22, True), fill=GREEN)
     
-    # Шкала прогресса
     ly = 1010; pts = [100, 330, 560, 790]
     draw.line((pts[0], ly, pts[-1], ly), fill=BORDER, width=4)
     draw.line((pts[0], ly, pts[1], ly), fill=GREEN, width=4)
@@ -218,19 +214,18 @@ def make_card(data, lang="EN"):
             draw.line((p-2, ly+8, p+10, ly-8), fill="white", width=4)
             draw.text((p-60, ly+35), prepare_text(lbls[i]), font=font(18), fill=NAVY)
         else:
-            # Кружочки на белом фоне
             draw.ellipse((p-20, ly-20, p+20, ly+20), fill=CARD_BG, outline=BORDER, width=3)
             draw.text((p-80, ly+35), prepare_text(lbls[i]), font=font(18), fill=GRAY)
 
-    # 4. Карточка защиты
+    # 4. Защита
     draw.rounded_rectangle((40, 1160, W-40, 1280), radius=20, fill=CARD_BG, outline=BORDER, width=2)
     check(70, 1185, 60, GREEN)
     draw.text((150, 1185), prepare_text(t["protected"]), font=font(30, True), fill=NAVY)
     draw.text((150, 1225), prepare_text(t["protected_text"]), font=font(20), fill=GRAY)
     draw.text((W-80, 1200), ">", font=font(40, True), fill=GRAY)
 
-    # 5. Футер помощи
-    draw.rounded_rectangle((40, 1310, W-40, 1390), radius=15, fill="#eef2f6") # Легкий серо-голубой фон
+    # 5. Футер
+    draw.rounded_rectangle((40, 1310, W-40, 1390), radius=15, fill="#eef2f6")
     draw.text((70, 1335), prepare_text(t["help"]), font=font(22), fill=GRAY)
     
     out = io.BytesIO()
@@ -274,6 +269,7 @@ def get_listing(txt):
         except: pass
     return {"title": title, "price": price, "currency": curr, "listing_id": lid, "image": p_img, "url": r.url, "url_with_time": url_t, "local_time": ltime, "track_id": trid, "order_id": oid, "trans_id": tid}
 
+# --- ХЕНДЛЕРЫ БОТА ---
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id in get_blocked_list(): return await update.message.reply_text("⛔ Вы заблокированы.")
     if ctx.user_data.get("authorized"): await update.message.reply_text("Ты авторизован! Отправляй ссылку.")
@@ -377,8 +373,30 @@ async def unblock_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try: unblock_user(int(ctx.args[0])); await update.message.reply_text("✅ Разблокирован!")
     except: await update.message.reply_text("⚠️ /unblock 123456789", parse_mode="Markdown")
 
-async def run_bot():
+
+# === ЗАПУСК (WEB + BOT) ===
+# 1. Создаем Flask приложение для health-check (чтобы Render не убивал процесс)
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def health():
+    return "Bot is running", 200
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 8080))
+    # Отключаем логи werkzeug, чтобы не засорять консоль
+    import logging
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)
+    web_app.run(host='0.0.0.0', port=port)
+
+# 2. Запуск самого бота
+async def main():
+    # Запускаем Flask в фоновом потоке
+    threading.Thread(target=run_web_server, daemon=True).start()
+
     app = Application.builder().token(TOKEN).build()
+    
     conv = ConversationHandler(
         entry_points=[MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link)],
         states={WAITING_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_price)], WAITING_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)]},
@@ -392,8 +410,18 @@ async def run_bot():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv)
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    await app.initialize(); await app.start(); await app.updater.start_polling()
-    print("✅ БОТ ЗАПУЩЕН (СВЕТЛАЯ ТЕМА)")
+    
+    print("✅ БОТ ЗАПУЩЕН (СВЕТЛАЯ ТЕМА) И ВЕБ-СЕРВЕР АКТИВЕН")
+    
+    # Запускаем бота в режиме polling
+    async with app:
+        await app.start()
+        await app.updater.start_polling()
+        # Бесконечное ожидание, чтобы скрипт не завершился
+        await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    asyncio.run(run_bot())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
