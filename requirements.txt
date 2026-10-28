@@ -1,10 +1,7 @@
-python-telegram-bot==21.6
+python-telegram-bot
 requests
-beautifulsoup4
-pillow
-qrcode[pil]
+qrcode
 arabic-reshaper
-python-bidi
-nest_asyncio
-Flask
-gunicorn
+beautifulsoup4
+Pillow
+flask
